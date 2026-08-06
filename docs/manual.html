@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>SWCS 繪圖工具 使用說明（圖文版）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Microsoft JhengHei", Arial, sans-serif; margin: 0; background: #f0f2f5; color: #222; line-height: 1.7; }
+  .page { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 24px; color: #1a3a5c; border-bottom: 3px solid #2e6da4; padding-bottom: 8px; }
+  h2 { font-size: 18px; color: #1a3a5c; margin-top: 36px; }
+  h2 .stepno { display: inline-block; background: #2e6da4; color: #fff; border-radius: 50%; width: 28px; height: 28px; text-align: center; line-height: 28px; font-size: 15px; margin-right: 8px; }
+  .box { background: #fff; border-radius: 8px; padding: 16px 18px; margin: 10px 0 18px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .demo { background: #fff; border: 1px solid #ccd6e0; border-radius: 6px; padding: 12px; margin: 10px 0; overflow-x: auto; }
+  .demo-label { font-size: 12px; color: #888; margin: 2px 0 8px; }
+  .warn { background: #fff6e5; border-left: 4px solid #e0a030; padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+  .tip { background: #e9f5ec; border-left: 4px solid #28a745; padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+  ol.steps > li { margin: 8px 0; }
+  .tb { background: #1a3a5c; padding: 8px 10px; border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .tb button { background: #2e6da4; color: #fff; border: none; border-radius: 4px; padding: 6px 12px; font-size: 13px; font-family: inherit; }
+  .tb button.primary { background: #28a745; font-weight: 600; }
+  .tb button.warnb { background: #8a4a4a; }
+  table.doc { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  table.doc th { background: #eef3f8; border: 1px solid #c9d4de; padding: 6px 10px; text-align: left; }
+  table.doc td { border: 1px solid #d5dde5; padding: 6px 10px; }
+  table.mini { border-collapse: collapse; font-size: 12.5px; }
+  table.mini th { background: #eef3f8; border: 1px solid #c9d4de; padding: 4px 8px; }
+  table.mini td { border: 1px solid #d5dde5; padding: 4px 8px; }
+  .rb { color: #999; font-size: 13px; padding: 0 3px; }
+  kbd { background: #eee; border: 1px solid #bbb; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  .dlg { border: 1px solid #888; border-radius: 8px; background: #fff; padding: 14px; max-width: 560px; }
+  .dlg h3 { margin: 0 0 8px; font-size: 15px; }
+  .dlg textarea { width: 100%; height: 56px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
+  .legend-line { display: inline-block; width: 46px; height: 0; vertical-align: middle; margin-right: 8px; }
+  .toc { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .toc a { color: #2e6da4; text-decoration: none; }
+  .arrow-note { color: #d97706; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>SWCS 繪圖工具 使用說明（圖文版）</h1>
+<p>本工具用於製作 <b>標準作業組合票（Standard Work Combination Sheet）</b>：輸入各站步驟秒數，自動畫出手作業／機械加工／走動／等待的時間線圖。單一 HTML 檔、免安裝、免網路，用 Edge 或 Chrome 開啟即可。</p>
+
+
+
+<div class="toc">
+<b>目錄</b><br>
+<a href="#s1">1. 開啟工具</a>｜<a href="#s2">2. 載入範例資料</a>｜<a href="#s3">3. 介面總覽</a>｜<a href="#s4">4. 填寫基本資料</a>｜<a href="#s5">5. 輸入步驟資料</a>｜<a href="#s6">6. 從 Excel 貼上匯入</a>｜<a href="#s7">7. 產生圖形與判讀</a>｜<a href="#s8">8. 輸出 PDF</a>｜<a href="#s9">9. 儲存與開啟資料檔</a>｜<a href="#s10">10. 常見問題</a>
+</div>
+
+<h2 id="s1"><span class="stepno">1</span>開啟工具</h2>
+<div class="box">
+<ol class="steps">
+<li>把收到的 zip 檔<b>解壓縮</b>到自己電腦（例如桌面）。</li>
+<li>對 <b>SWCS繪圖工具.html</b> 按兩下，瀏覽器（Edge / Chrome）會自動開啟。</li>
+</ol>
+<div class="warn">⚠ 不要在壓縮檔視窗裡直接點開，一定要<b>先解壓縮</b>，否則資料無法自動保存。</div>
+<div class="tip">✔ 不需要安裝任何軟體、不需要網路、不會跳資安警告。</div>
+</div>
+
+<h2 id="s2"><span class="stepno">2</span>載入範例資料（第一次使用建議先做）</h2>
+<div class="box">
+<p>壓縮包內附 <b>swcs-demo-sample.json</b>（示範產線，1 人 5 機）。</p>
+<ol class="steps">
+<li>按工具列的 <b>「開啟資料檔」</b>。</li>
+<li>在跳出的視窗選擇 <b>swcs-demo-sample.json</b> → 開啟。</li>
+<li>畫面會出現 10 個工作站的完整資料與 SWCS 圖，可以此為範本修改成自己的案子。</li>
+</ol>
+</div>
+
+<h2 id="s3"><span class="stepno">3</span>介面總覽 — 工具列按鈕</h2>
+<div class="box">
+<div class="demo">
+<div class="demo-label">▼ 工具列（畫面最上方）</div>
+<div class="tb"><span style="color:#fff;font-weight:600">SWCS 繪圖工具</span>
+<button class="primary">產生圖形</button><button>↶ 復原</button><button>列印 / 匯出 PDF</button><button>從 Excel 貼上匯入</button><button>儲存資料檔</button><button>開啟資料檔</button><button>載入範例(Demo)</button><button class="warnb">全部清除</button></div>
+</div>
+<table class="doc">
+<tr><th style="width:170px">按鈕</th><th>功能</th></tr>
+<tr><td><b>產生圖形</b></td><td>依目前資料重畫 SWCS 圖（改資料時也會自動重畫）</td></tr>
+<tr><td><b>↶ 復原</b></td><td>退回上一步操作（刪錯、改錯都能救），也可按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，最多退 50 步</td></tr>
+<tr><td><b>列印 / 匯出 PDF</b></td><td>開啟列印視窗，目的地選「另存為 PDF」即輸出</td></tr>
+<tr><td><b>從 Excel 貼上匯入</b></td><td>把現有 SWCS Excel 的資料整批貼進來（見第 6 節）</td></tr>
+<tr><td><b>儲存資料檔</b></td><td>把目前資料存成 .json 檔（跳出視窗選位置，檔名自動帶日期時間）</td></tr>
+<tr><td><b>開啟資料檔</b></td><td>載入之前存的 .json 檔</td></tr>
+<tr><td><b>載入範例(Demo)</b></td><td>載入內建範例（會覆蓋目前資料，請先存檔）</td></tr>
+<tr><td><b>全部清除</b></td><td>清空所有資料（會先確認，清錯可用復原）</td></tr>
+</table>
+<div class="tip">✔ 輸入的資料會<b>自動記憶</b>在瀏覽器裡，關閉再開啟都還在；重要案子仍建議按「儲存資料檔」留檔備份。</div>
+</div>
+
+<h2 id="s4"><span class="stepno">4</span>填寫基本資料</h2>
+<div class="box">
+<table class="doc">
+<tr><th style="width:190px">欄位</th><th>說明</th></tr>
+<tr><td>表單標題</td><td>顯示在圖最上方的標題</td></tr>
+<tr><td>Product / Operator #</td><td>產品（區域）名稱、作業人員編號</td></tr>
+<tr><td>Takt time (sec)</td><td>節拍時間；圖上會畫紅色虛直線供比對</td></tr>
+<tr><td>Available time (sec)</td><td>每班可用時間；用來自動計算 Capacity（產能）</td></tr>
+<tr><td>循環數</td><td>要畫幾個作業循環（1~6）；畫 2 個以上才能看出機台等待</td></tr>
+<tr><td>時間軸縮放</td><td>圖的橫向密度（px/秒），加工時間長可調小</td></tr>
+</table>
+<p>Cycle time 與 Capacity 由程式依模擬結果<b>自動計算</b>，不用填。</p>
+</div>
+
+<h2 id="s5"><span class="stepno">5</span>輸入步驟資料</h2>
+<div class="box">
+<div class="demo">
+<div class="demo-label">▼ 步驟資料表格（示意，每列最右邊有 4 個編輯按鈕）</div>
+<table class="mini">
+<tr><th>站#</th><th>機台 / 料號描述</th><th>步驟#</th><th>步驟說明</th><th>Manual<br>(sec)</th><th>Auto<br>(sec)</th><th>Walk<br>(sec)</th><th></th></tr>
+<tr><td rowspan="5" style="text-align:center"><b>1</b><br><span class="rb">✕</span></td><td rowspan="5">Part-001<br>(機台 M01)<br><span style="border:1px dashed #8aa8c0;border-radius:4px;padding:0 6px;color:#2e6da4;font-size:11px">＋步驟</span></td>
+<td style="text-align:center">6-1</td><td>取出工件 (Unload)</td><td style="text-align:center">11</td><td></td><td></td><td><span class="rb">↑</span><span class="rb">↓</span><span class="rb" style="color:#28a745">＋</span><span class="rb" style="color:#c33">✕</span></td></tr>
+<tr><td style="text-align:center">6-2</td><td>放置工件 (Load)</td><td style="text-align:center">11</td><td></td><td></td><td><span class="rb">↑</span><span class="rb">↓</span><span class="rb" style="color:#28a745">＋</span><span class="rb" style="color:#c33">✕</span></td></tr>
+<tr><td style="text-align:center">6-3</td><td>機械加工 (Machining)</td><td></td><td style="text-align:center;color:#c00">280</td><td></td><td><span class="rb">↑</span><span class="rb">↓</span><span class="rb" style="color:#28a745">＋</span><span class="rb" style="color:#c33">✕</span></td></tr>
+<tr><td style="text-align:center">6-4</td><td>吹工件 (Clean)</td><td style="text-align:center">11</td><td></td><td></td><td><span class="rb">↑</span><span class="rb">↓</span><span class="rb" style="color:#28a745">＋</span><span class="rb" style="color:#c33">✕</span></td></tr>
+<tr><td style="text-align:center">6-5</td><td>人員走動至 B 站 (Walk)</td><td></td><td></td><td style="text-align:center">5</td><td><span class="rb">↑</span><span class="rb">↓</span><span class="rb" style="color:#28a745">＋</span><span class="rb" style="color:#c33">✕</span></td></tr>
+</table>
+</div>
+<table class="doc">
+<tr><th style="width:120px">按鈕</th><th>功能</th></tr>
+<tr><td><b>↑ ↓</b></td><td>該列上移／下移一格（調整站內作業順序）</td></tr>
+<tr><td style="color:#28a745"><b>＋</b>（列尾）</td><td>在該列下方插入一列空白步驟</td></tr>
+<tr><td style="color:#c33"><b>✕</b>（列尾）</td><td>刪除該列（可用復原救回）</td></tr>
+<tr><td><b>＋步驟</b></td><td>在該站最後加一列</td></tr>
+<tr><td><b>✕</b>（站號下）</td><td>刪除整站（會先確認）</td></tr>
+</table>
+<p><b>排序規則：</b></p>
+<ul>
+<li><b>站與站之間</b>：依「步驟編號」中「-」前面的數字決定作業順序（1-x 最先做，2-x 次之…）。</li>
+<li><b>站內</b>：依表格<b>列的順序由上而下</b>執行。標準排法：取出工件 → 放置工件 → 機械加工 → 吹/清潔 → 走動。</li>
+</ul>
+<p><b>秒數填法：</b>手作業填 <b>Manual</b>、機械自動加工填 <b>Auto</b>、走動填 <b>Walk</b>，一列填一種即可。
+機械加工的 Auto 也可以直接填在「放置工件」那一列（放置後按開關的情境），紅虛線會接在黑線正後方。</p>
+</div>
+
+<h2 id="s6"><span class="stepno">6</span>從 Excel 貼上匯入（已有 SWCS Excel 檔時）</h2>
+<div class="box">
+<ol class="steps">
+<li>在 Excel 框選資料範圍（原 SWCS 模板選 <b>A9:K88</b>），按 <kbd>Ctrl</kbd>+<kbd>C</kbd> 複製。</li>
+<li>回到工具按「從 Excel 貼上匯入」，在跳出的視窗按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上。</li>
+<li>按「匯入」，資料自動轉入（站號、多行機台描述、合併儲存格都能正確處理）。</li>
+</ol>
+<div class="demo">
+<div class="demo-label">▼ 貼上匯入視窗（示意）</div>
+<div class="dlg"><h3>從 Excel 貼上匯入</h3>
+<div style="font-size:12px;color:#777">支援兩種格式：① 原 SWCS 模板 A~K 欄　② 簡易 7 欄（站號, 機台描述, 步驟編號, 步驟說明, Manual, Auto, Walk）</div>
+<textarea placeholder="在此貼上 Excel 資料..."></textarea>
+<div style="text-align:right"><span style="border:1px dashed #8aa8c0;border-radius:4px;padding:2px 10px;color:#2e6da4;font-size:12px;margin-right:6px">取消</span><span style="background:#28a745;color:#fff;border-radius:4px;padding:2px 10px;font-size:12px">匯入</span></div>
+</div>
+</div>
+<div class="warn">⚠ 匯入後請檢查各站列順序是否為「取出 → 放置 → 加工 → 吹 → 走動」，舊檔若順序不同，用 ↑↓ 調整。</div>
+</div>
+
+<h2 id="s7"><span class="stepno">7</span>產生圖形與判讀</h2>
+<div class="box">
+<div class="demo">
+<div class="demo-label">▼ 圖形範例（一個工作站的軌跡）</div>
+<svg viewBox="0 0 660 176" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" style="min-width:600px">
+<g font-size="11" fill="#555">
+<text x="4" y="30">取出工件</text><text x="4" y="56">放置工件</text><text x="4" y="82">機械加工</text><text x="4" y="108">吹工件</text><text x="4" y="134">走動</text>
+</g>
+<g stroke="#e3e8ee"><line x1="100" y1="14" x2="100" y2="150"/><line x1="180" y1="14" x2="180" y2="150"/><line x1="260" y1="14" x2="260" y2="150"/><line x1="340" y1="14" x2="340" y2="150"/><line x1="420" y1="14" x2="420" y2="150"/><line x1="500" y1="14" x2="500" y2="150"/><line x1="580" y1="14" x2="580" y2="150"/></g>
+<line x1="100" y1="14" x2="100" y2="150" stroke="#0070c0" stroke-width="1.4" stroke-dasharray="3,3"/>
+<text x="104" y="12" fill="#0070c0" font-size="10" font-weight="700">C1</text>
+<line x1="40" y1="26" x2="100" y2="26" stroke="#888" stroke-width="2.4" stroke-dasharray="2,3"/>
+<text x="52" y="18" fill="#666" font-size="10">等待</text>
+<line x1="100" y1="26" x2="180" y2="26" stroke="#000" stroke-width="3.5"/>
+<line x1="180" y1="26" x2="180" y2="52" stroke="#000" stroke-width="1.4"/>
+<line x1="180" y1="52" x2="260" y2="52" stroke="#000" stroke-width="3.5"/>
+<line x1="260" y1="52" x2="260" y2="78" stroke="#e00000" stroke-width="1.4"/>
+<line x1="260" y1="78" x2="648" y2="78" stroke="#e00000" stroke-width="3" stroke-dasharray="7,4"/>
+<line x1="260" y1="52" x2="260" y2="104" stroke="#000" stroke-width="1.4"/>
+<line x1="260" y1="104" x2="340" y2="104" stroke="#000" stroke-width="3.5"/>
+<line x1="338.8" y1="105.2" x2="398.8" y2="161.2" stroke="#4CAF50" stroke-width="1.5"/>
+<line x1="341.2" y1="102.8" x2="401.2" y2="158.8" stroke="#4CAF50" stroke-width="1.5"/>
+<text x="376" y="136" fill="#4CAF50" font-size="10">5</text>
+<line x1="560" y1="14" x2="560" y2="150" stroke="#e00000" stroke-width="1.2" stroke-dasharray="8,4"/>
+<text x="564" y="12" fill="#e00000" font-size="10">Takt</text>
+</svg>
+</div>
+<table class="doc">
+<tr><th style="width:200px">線條</th><th>意義</th></tr>
+<tr><td><span class="legend-line" style="border-top:3.5px solid #000"></span>黑色實線</td><td>手作業（Manual）：取出、放置、吹屑等</td></tr>
+<tr><td><span class="legend-line" style="border-top:3px dashed #e00000"></span>紅色虛線</td><td>機械自動加工（Auto）：從「放置工件」結束（按開關）那一刻開始</td></tr>
+<tr><td><span class="legend-line" style="border-top:1.5px solid #4CAF50;border-bottom:1.5px solid #4CAF50;height:4px"></span>兩條綠色細斜線</td><td>人員走動（Walk）：連到下一站的第一個手作業，旁邊綠字＝走動秒數</td></tr>
+<tr><td><span class="legend-line" style="border-top:3px dotted #888"></span>灰色點線＋<span style="font-size:16px">💚</span>綠底爆炸</td><td><b>人等機</b>：人到站時機台還沒加工完、人要等＝人員閒置浪費（程式自動計算），等待區間中點以綠底爆炸圖標示等待秒數</td></tr>
+<tr><td><span style="font-size:18px;margin-right:6px">💥</span>黃色爆炸圖示</td><td><b>機等人</b>：機台先停了、人還沒走到＝機台閒置浪費（CNC 改善機會）。圖示中間寫閒置秒數，畫在機械加工列；統計區另列機等人明細與合計</td></tr>
+<tr><td><span class="legend-line" style="border-top:1.5px dashed #0070c0"></span>藍色直線 C1/C2</td><td>各循環的起始時間點</td></tr>
+<tr><td><span class="legend-line" style="border-top:1.5px dashed #e00000"></span>紅色虛直線</td><td>Takt time 位置（可在基本資料區關閉）</td></tr>
+</table>
+<p>圖形下方的統計表會列出<b>各循環的 Cycle Time</b>、<b>等待明細</b>（哪一站等幾秒＝瓶頸線索），以及<b>最後循環 CT 與 Takt 的差異</b>（紅字=超過節拍、綠字=有餘裕）。</p>
+</div>
+
+<h2 id="s8"><span class="stepno">8</span>輸出 PDF / 列印（A3 分頁拼貼）</h2>
+<div class="box">
+<ol class="steps">
+<li>按工具列「<b>列印 / 匯出 PDF</b>」。</li>
+<li>目的地選「<b>另存為 PDF</b>」（或直接選印表機），紙張 <b>A3、橫向</b>。</li>
+<li>按「儲存」或「列印」。檔名自動帶表單標題與日期時間。</li>
+</ol>
+<p><b>自動分頁設計（字體以肉眼可讀為準，不硬塞一頁）：</b></p>
+<ul>
+<li>時間軸自動切成多頁：<b>第 1 頁</b>含表頭資訊與左側步驟表，<b>第 2 頁起</b>是時間軸的無縫接續（2 循環約 2 頁、6 循環約 5~6 頁）</li>
+<li>每頁上緣標示「第 N 頁｜時間範圍」；印出後<b>沿邊裁切、依時間軸對齊拼貼</b>，即成完整 SWCS 大圖（可張貼於現場）</li>
+<li>字體已自動放大，A3 印出後表格文字與秒數標籤清楚可讀</li>
+<li>統計表（各循環 CT、人等機、機等人明細）附在最後</li>
+</ul>
+</div>
+
+<h2 id="s9"><span class="stepno">9</span>儲存與開啟資料檔</h2>
+<div class="box">
+<ul>
+<li><b>儲存資料檔</b>：跳出「另存新檔」視窗，可選資料夾與檔名（預設 SWCS_產品名_日期時間.json，每次都是新檔不互相覆蓋）。</li>
+<li><b>開啟資料檔</b>：選擇 .json 檔載入完整資料與圖形。</li>
+<li>要把自己的案子傳給別人：存出 json，連同工具 html 一起寄，對方用「開啟資料檔」載入。</li>
+</ul>
+</div>
+
+<h2 id="s10"><span class="stepno">10</span>常見問題</h2>
+<div class="box">
+<table class="doc">
+<tr><th style="width:290px">問題</th><th>解法</th></tr>
+<tr><td>雙擊後用了奇怪的程式開啟</td><td>對檔案按右鍵 → 開啟檔案 → 選 Edge 或 Chrome</td></tr>
+<tr><td>輸入的資料會不會不見？</td><td>瀏覽器自動記憶（同一台電腦同一瀏覽器）；換電腦請用「儲存資料檔」帶走</td></tr>
+<tr><td>按錯／刪錯了</td><td>按「↶ 復原」或 <kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
+<tr><td>Email 附件被擋</td><td>html 要壓成 zip 再寄，或改用 Teams / OneDrive 傳</td></tr>
+<tr><td>圖太長看不完</td><td>圖形區可左右捲動；或把「時間軸縮放」調小</td></tr>
+<tr><td>紅色加工線沒接在放置後面</td><td>檢查該站列順序（取出→放置→加工），用 ↑↓ 調整</td></tr>
+</table>
+</div>
+
+<p style="color:#888;font-size:12.5px;margin-top:30px">SWCS 繪圖工具｜使用說明 2026-07-14 版</p>
+</div>
+</body>
+</html>

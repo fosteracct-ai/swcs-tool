@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>SWCS 標準作業組合票 繪圖工具</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Microsoft JhengHei", Arial, sans-serif; margin: 0; background: #f0f2f5; color: #222; }
+  .toolbar { background: #1a3a5c; color: #fff; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: sticky; top: 0; z-index: 10; }
+  .toolbar h1 { font-size: 16px; margin: 0 14px 0 0; font-weight: 600; }
+  .toolbar button { background: #2e6da4; color: #fff; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .toolbar button:hover { background: #3d84c6; }
+  .toolbar button.primary { background: #28a745; font-weight: 600; }
+  .toolbar button.primary:hover { background: #34c058; }
+  .toolbar button.warn { background: #8a4a4a; }
+  .toolbar button:disabled { opacity: .35; cursor: default; }
+  .panel { background: #fff; margin: 12px 16px; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; color: #1a3a5c; border-left: 4px solid #2e6da4; padding-left: 8px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .meta label { font-size: 12px; color: #555; display: flex; flex-direction: column; gap: 3px; }
+  .meta input, .meta select { padding: 4px 6px; border: 1px solid #bbb; border-radius: 4px; font-size: 13px; }
+  .meta input[type=number] { width: 90px; }
+  .meta input.wide { width: 420px; }
+  table.inp { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.inp th { background: #eef3f8; border: 1px solid #c9d4de; padding: 4px 6px; font-size: 12px; }
+  table.inp td { border: 1px solid #d5dde5; padding: 2px 4px; vertical-align: middle; }
+  table.inp input, table.inp textarea { width: 100%; border: none; background: transparent; font-size: 12.5px; padding: 3px 4px; font-family: inherit; }
+  table.inp input:focus, table.inp textarea:focus { outline: 2px solid #7fb3e0; background: #fbfdff; }
+  table.inp input.num { text-align: center; }
+  table.inp textarea { resize: vertical; min-height: 34px; }
+  td.stno { text-align: center; font-weight: 700; background: #f7fafc; }
+  .rowbtn { border: none; background: transparent; color: #999; cursor: pointer; font-size: 13px; padding: 1px 4px; }
+  .rowbtn:hover { color: #c33; }
+  .rowbtn.ins:hover { color: #28a745; }
+  .rowbtn.mv:hover { color: #2e6da4; }
+  .addbtn { margin: 4px 2px; background: #eef3f8; border: 1px dashed #8aa8c0; color: #2e6da4; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+  .addbtn:hover { background: #dcE9f5; }
+  .chartwrap { overflow-x: auto; background: #fff; cursor: grab; user-select: none; }
+  .stats { font-size: 13px; margin-top: 8px; }
+  .stats table { border-collapse: collapse; }
+  .stats th, .stats td { border: 1px solid #ccc; padding: 3px 10px; font-size: 12.5px; }
+  .stats th { background: #eef3f8; }
+  dialog { border: 1px solid #888; border-radius: 8px; max-width: 720px; width: 90%; }
+  dialog textarea { width: 100%; height: 260px; font-family: Consolas, monospace; font-size: 12px; }
+  dialog .dlgbtns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .hint { color: #777; font-size: 12px; margin: 6px 0; }
+  #printPages { display: none; }
+  @media print {
+    body { background: #fff; }
+    .no-print, .panel { display: none !important; }
+    #printPages { display: block; }
+    .ppage { page-break-after: always; }
+    .ppage:last-of-type { page-break-after: auto; }
+    @page { size: A3 landscape; margin: 8mm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <h1>SWCS 繪圖工具 <span id="verTag" style="font-size:11px;opacity:.75;font-weight:400"></span></h1>
+  <button class="primary" id="btnDraw">產生圖形</button>
+  <button id="undoBtn" disabled title="復原上一步 (Ctrl+Z)">↶ 復原</button>
+  <button id="btnPrint">列印 / 匯出 PDF</button>
+  <button id="btnPasteOpen">從 Excel 貼上匯入</button>
+  <button id="btnSave">儲存資料檔</button>
+  <button id="btnOpen">開啟資料檔</button>
+  <input type="file" id="fileIn" accept=".json" style="display:none">
+  <button id="btnSample">載入範例(Demo)</button>
+  <button class="warn" id="btnClear">全部清除</button>
+</div>
+
+<div class="panel no-print">
+  <h2>基本資料</h2>
+  <div class="meta">
+    <label>表單標題<input class="wide" id="mTitle"></label>
+    <label>Product<input id="mProduct" style="width:110px"></label>
+    <label>Operator #<input id="mOperator" style="width:60px"></label>
+    <label>Takt time (sec)<input type="number" id="mTakt"></label>
+    <label>Available time (sec)<input type="number" id="mAvail"></label>
+    <label>循環數<select id="mCycles"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+    <label>時間軸縮放<select id="mZoom">
+      <option value="0.8">0.8 px/秒</option><option value="1">1 px/秒</option>
+      <option value="1.5" selected>1.5 px/秒</option><option value="2">2 px/秒</option><option value="3">3 px/秒</option>
+    </select></label>
+    <label style="flex-direction:row;align-items:center;gap:6px">顯示 Takt 線<input type="checkbox" id="mShowTakt" checked></label>
+  </div>
+</div>
+
+<div class="panel no-print">
+  <h2>作業路徑（進階：一人多機重複巡迴，同一站可多次造訪；<b>留空＝傳統模式</b>）</h2>
+  <div class="hint">每一段＝造訪一站。「站#」對應下方步驟資料的站號（<b>建議機台用英文字母 A、B、C…命名</b>，與路徑順序數字區隔）；「走動秒數」＝做完該站走到下一段的時間，目的地會自動顯示在右欄（最後一段＝走回第一段）。設定路徑後，步驟編號不再決定順序、各站的走動列會被忽略。</div>
+  <div id="routeArea"></div>
+  <button class="addbtn" id="btnAddLeg">＋ 新增一段</button>
+  <button class="addbtn" id="btnClearRoute" style="color:#8a4a4a;border-color:#c9a">清空路徑（回傳統模式）</button>
+</div>
+
+<div class="panel no-print">
+  <h2>步驟資料（傳統模式：站與站順序 = 步驟編號「-」前的數字；站內依列的順序由上而下執行）</h2>
+  <div id="inputArea"></div>
+  <button class="addbtn" id="btnAddStation">＋ 新增工作站</button>
+</div>
+
+<div class="panel">
+  <h2 class="no-print">SWCS 圖形</h2>
+  <div class="chartwrap" id="chartArea"></div>
+  <div class="stats" id="statsArea"></div>
+</div>
+<div id="printPages"></div>
+
+<dialog id="pasteDlg">
+  <h3 style="margin-top:0">從 Excel 貼上匯入</h3>
+  <div class="hint">
+    在 Excel 框選資料範圍後複製（Ctrl+C），貼到下面（Ctrl+V）。支援兩種格式：<br>
+    ① 原 SWCS 模板 A~K 欄（A=站號, B=機台描述, D=步驟編號, E=步驟說明, I=Manual, J=Auto, K=Walk）<br>
+    ② 簡易 7 欄：站號, 機台描述, 步驟編號, 步驟說明, Manual, Auto, Walk<br>
+    站號只需填在該站第一列（合併儲存格複製過來即是如此）。
+  </div>
+  <textarea id="pasteBox" placeholder="在此貼上 Excel 資料..."></textarea>
+  <div class="dlgbtns">
+    <button class="addbtn" id="btnPasteCancel">取消</button>
+    <button class="addbtn" style="background:#28a745;color:#fff;border:none" id="btnPasteGo">匯入</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+const TOOL_VERSION = "v2.5 (2026-07-27)";
+
+// ---------------- state ----------------
+let state = null;
+
+const SAMPLE = {
+  title: "Standard Work Combination Sheet - Demo (1人5機)",
+  product: "示範產線", operator: "1", takt: 300, avail: 27600, cycles: 2, zoom: 1.5, showTakt: true,
+  stations: [
+    { no:"A", desc:"Part-001\n(機台 M01)", steps:[
+      {no:"1-1",desc:"取出工件 (Unload)",m:10,a:0,w:0},{no:"1-2",desc:"放置工件 (Load)",m:10,a:0,w:0},
+      {no:"1-3",desc:"機械加工 (Machining)",m:0,a:280,w:0},{no:"1-4",desc:"吹工件 (Clean)",m:5,a:0,w:0},
+      {no:"1-5",desc:"人員走動至 B 站 (Walk)",m:0,a:0,w:5}]},
+    { no:"B", desc:"Part-002\n(機台 M02)", steps:[
+      {no:"2-1",desc:"取出工件 (Unload)",m:10,a:0,w:0},{no:"2-2",desc:"放置工件 (Load)",m:10,a:0,w:0},
+      {no:"2-3",desc:"機械加工 (Machining)",m:0,a:120,w:0},{no:"2-4",desc:"吹工件 (Clean)",m:5,a:0,w:0},
+      {no:"2-5",desc:"人員走動至 C 站 (Walk)",m:0,a:0,w:5}]},
+    { no:"C", desc:"Part-003\n(機台 M03)", steps:[
+      {no:"3-1",desc:"取出工件 (Unload)",m:10,a:0,w:0},{no:"3-2",desc:"放置工件 (Load)",m:10,a:0,w:0},
+      {no:"3-3",desc:"機械加工 (Machining)",m:0,a:150,w:0},{no:"3-4",desc:"吹工件 (Clean)",m:5,a:0,w:0},
+      {no:"3-5",desc:"人員走動至 D 站 (Walk)",m:0,a:0,w:5}]},
+    { no:"D", desc:"Part-004\n(機台 M04)", steps:[
+      {no:"4-1",desc:"取出工件 (Unload)",m:10,a:0,w:0},{no:"4-2",desc:"放置工件 (Load)",m:10,a:0,w:0},
+      {no:"4-3",desc:"機械加工 (Machining)",m:0,a:90,w:0},{no:"4-4",desc:"吹工件 (Clean)",m:5,a:0,w:0},
+      {no:"4-5",desc:"人員走動至 E 站 (Walk)",m:0,a:0,w:5}]},
+    { no:"E", desc:"Part-005\n(機台 M05)", steps:[
+      {no:"5-1",desc:"取出工件 (Unload)",m:10,a:0,w:0},{no:"5-2",desc:"放置工件 (Load)",m:10,a:0,w:0},
+      {no:"5-3",desc:"機械加工 (Machining)",m:0,a:260,w:0},{no:"5-4",desc:"吹工件 (Clean)",m:5,a:0,w:0},
+      {no:"5-5",desc:"人員走動回 A 站 (Walk)",m:0,a:0,w:5}]}
+  ]
+};
+
+function emptyState() {
+  return { title:"Standard Work Combination Sheet", product:"", operator:"1",
+           takt:0, avail:27600, cycles:2, zoom:1.5, showTakt:true,
+           stations:[ newStation("1") ] };
+}
+function newStation(no) {
+  return { no:no, desc:"", steps:[
+    {no:"",desc:"放置工件 (Load)",m:0,a:0,w:0},
+    {no:"",desc:"機械加工 (Machining)",m:0,a:0,w:0},
+    {no:"",desc:"取出工件 (Unload)",m:0,a:0,w:0},
+    {no:"",desc:"吹工件 (Clean)",m:0,a:0,w:0},
+    {no:"",desc:"人員走動機至機 (Walk)",m:0,a:0,w:0}]};
+}
+
+// ---------------- undo ----------------
+let undoStack = [];
+function snap() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > 50) undoStack.shift();
+  updateUndoBtn();
+}
+function undo() {
+  if (!undoStack.length) return;
+  state = JSON.parse(undoStack.pop());
+  renderAll(); autosave(); updateUndoBtn();
+}
+function updateUndoBtn() {
+  const b = document.getElementById("undoBtn");
+  if (b) b.disabled = !undoStack.length;
+}
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+    e.preventDefault(); undo();
+  }
+});
+
+// ---------------- persistence ----------------
+const LS_KEY = "swcs-tool-v1";
+let saveTimer = null;
+function autosave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){} }, 400);
+}
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  return String(d.getFullYear()).slice(-2) + p(d.getMonth()+1) + p(d.getDate()) + "_" + p(d.getHours()) + p(d.getMinutes());
+}
+function fileBase() {
+  const t = (state.title || "未命名").replace(/[\\/:*?"<>|]/g, "-").trim();
+  return "SWCS_" + t + "_" + stamp();
+}
+async function saveJSON() {
+  const data = JSON.stringify(state, null, 1);
+  const fname = fileBase() + ".json";
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({
+        suggestedName: fname,
+        types: [{ description: "SWCS 資料檔 (JSON)", accept: { "application/json": [".json"] } }]
+      });
+      const w = await h.createWritable();
+      await w.write(data);
+      await w.close();
+      return;
+    } catch(e) {
+      if (e.name === "AbortError") return;   // 使用者取消
+    }
+  }
+  const blob = new Blob([data], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
+}
+window.addEventListener("beforeprint", () => { document.title = fileBase(); buildPrintPages(); });
+window.addEventListener("afterprint", () => {
+  document.title = "SWCS 標準作業組合票 繪圖工具";
+  const pp = document.getElementById("printPages");
+  if (pp) pp.innerHTML = "";
+});
+function loadJSON(inp) {
+  const f = inp.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    try { const s = JSON.parse(rd.result); snap(); state = s; renderAll(); autosave(); }
+    catch(e) { alert("檔案格式錯誤: " + e.message); }
+  };
+  rd.readAsText(f, "utf-8");
+  inp.value = "";
+}
+function loadSample() { snap(); state = JSON.parse(JSON.stringify(SAMPLE)); renderAll(); autosave(); }
+function clearAll() {
+  if (!confirm("確定要清除全部資料？（可用「復原」找回）")) return;
+  snap();
+  state = emptyState(); renderAll(); autosave();
+}
+
+// ---------------- meta UI ----------------
+function fillMeta() {
+  mTitle.value = state.title; mProduct.value = state.product; mOperator.value = state.operator;
+  mTakt.value = state.takt || ""; mAvail.value = state.avail || "";
+  mCycles.value = String(state.cycles); mZoom.value = String(state.zoom);
+  mShowTakt.checked = !!state.showTakt;
+}
+function metaChanged() {
+  state.title = mTitle.value; state.product = mProduct.value; state.operator = mOperator.value;
+  state.takt = +mTakt.value || 0; state.avail = +mAvail.value || 0;
+  state.cycles = +mCycles.value; state.zoom = +mZoom.value; state.showTakt = mShowTakt.checked;
+  autosave(); drawChartDebounced();
+}
+
+// ---------------- input table ----------------
+function renderInput() {
+  const el = document.getElementById("inputArea");
+  let h = '<table class="inp"><tr><th style="width:34px">站#</th><th style="width:170px">機台 / 料號描述</th>' +
+          '<th style="width:56px">步驟#</th><th>步驟說明</th><th style="width:58px">Manual<br>(sec)</th>' +
+          '<th style="width:58px">Auto<br>(sec)</th><th style="width:58px">Walk<br>(sec)</th><th style="width:92px"></th></tr>';
+  state.stations.forEach((st, si) => {
+    st.steps.forEach((sp, pi) => {
+      h += "<tr>";
+      if (pi === 0) {
+        const rs = st.steps.length;
+        h += `<td class="stno" rowspan="${rs}"><input class="num" style="font-weight:700" value="${esc(st.no)}" data-si="${si}" data-pi="-1" data-k="no"><button class="rowbtn" title="刪除整站" data-act="delst" data-si="${si}">✕</button></td>`;
+        h += `<td rowspan="${rs}"><textarea rows="3" data-si="${si}" data-pi="-1" data-k="desc">${esc(st.desc)}</textarea>` +
+             `<button class="addbtn" style="padding:1px 6px;font-size:11px" data-act="addstep" data-si="${si}">＋步驟</button></td>`;
+      }
+      h += `<td><input class="num" value="${esc(sp.no)}" data-si="${si}" data-pi="${pi}" data-k="no"></td>` +
+           `<td><input value="${esc(sp.desc)}" data-si="${si}" data-pi="${pi}" data-k="desc"></td>` +
+           `<td><input class="num" type="number" min="0" value="${sp.m || ""}" data-si="${si}" data-pi="${pi}" data-k="m"></td>` +
+           `<td><input class="num" type="number" min="0" value="${sp.a || ""}" data-si="${si}" data-pi="${pi}" data-k="a"></td>` +
+           `<td><input class="num" type="number" min="0" value="${sp.w || ""}" data-si="${si}" data-pi="${pi}" data-k="w"></td>` +
+           `<td style="white-space:nowrap"><button class="rowbtn mv" title="上移一列" data-act="mvup" data-si="${si}" data-pi="${pi}">↑</button>` +
+           `<button class="rowbtn mv" title="下移一列" data-act="mvdown" data-si="${si}" data-pi="${pi}">↓</button>` +
+           `<button class="rowbtn ins" title="在此列下方插入步驟" data-act="ins" data-si="${si}" data-pi="${pi}">＋</button>` +
+           `<button class="rowbtn" title="刪除此步驟" data-act="del" data-si="${si}" data-pi="${pi}">✕</button></td></tr>`;
+    });
+  });
+  h += "</table>";
+  el.innerHTML = h;
+}
+function U(si, pi, k, v) {
+  snap();
+  if (pi < 0) state.stations[si][k] = v;
+  else {
+    const sp = state.stations[si].steps[pi];
+    if (k === "m" || k === "a" || k === "w") sp[k] = Math.max(0, +v || 0);
+    else sp[k] = v;
+  }
+  if (pi < 0 && k === "no") renderRoute();   // 站號改了→路徑目的地提示同步刷新
+  autosave(); drawChartDebounced();
+}
+function addStation() {
+  snap();
+  state.stations.push(newStation(String(state.stations.length + 1)));
+  renderInput(); autosave();
+}
+function delStation(si) {
+  if (!confirm("刪除工作站 " + state.stations[si].no + " ?（可用「復原」找回）")) return;
+  snap();
+  state.stations.splice(si, 1); renderInput(); autosave(); drawChartDebounced();
+}
+function addStep(si) {
+  snap();
+  state.stations[si].steps.push({no:"",desc:"",m:0,a:0,w:0});
+  renderInput(); autosave();
+}
+function insStep(si, pi) {
+  snap();
+  state.stations[si].steps.splice(pi + 1, 0, {no:"",desc:"",m:0,a:0,w:0});
+  renderInput(); autosave();
+}
+function moveStep(si, pi, dir) {
+  const steps = state.stations[si].steps;
+  const ni = pi + dir;
+  if (ni < 0 || ni >= steps.length) return;
+  snap();
+  const tmp = steps[pi]; steps[pi] = steps[ni]; steps[ni] = tmp;
+  renderInput(); autosave(); drawChartDebounced();
+}
+function delStep(si, pi) {
+  snap();
+  state.stations[si].steps.splice(pi, 1);
+  if (state.stations[si].steps.length === 0) state.stations.splice(si, 1);
+  renderInput(); autosave(); drawChartDebounced();
+}
+
+// ---------------- route (一人多機重複巡迴) ----------------
+function renderRoute() {
+  const el = document.getElementById("routeArea");
+  if (!el) return;
+  const rt = state.route || [];
+  if (!rt.length) { el.innerHTML = '<div class="hint">（未設定路徑：使用傳統模式，每站造訪一次、順序依步驟編號）</div>'; return; }
+  const known = {};
+  state.stations.forEach(st => { known[String(st.no).trim()] = true; });
+  let h = '<table class="inp" style="max-width:840px"><tr><th style="width:52px">順序</th><th style="width:90px">站#</th><th style="width:170px">走動到下一段 (sec)</th><th style="width:250px">（自動顯示）</th><th style="width:96px"></th></tr>';
+  rt.forEach((r, i) => {
+    const cur = String(r.st || "").trim();
+    const nxt = String((rt[(i + 1) % rt.length] || {}).st || "").trim();
+    let dest;
+    if (i === rt.length - 1) dest = nxt ? "↩ 走回第 1 段（站 " + esc(nxt) + "），一循環結束" : "↩ 走回第 1 段";
+    else dest = nxt ? "→ 到站 " + esc(nxt) : "→（下一段站# 未填）";
+    const bad = cur !== "" && !known[cur];
+    h += `<tr><td style="text-align:center;background:#f7fafc">${i + 1}</td>` +
+         `<td><input class="num" style="font-weight:700${bad ? ";background:#ffe5e5" : ""}" value="${esc(r.st)}" placeholder="A" data-ri="${i}" data-rk="st"></td>` +
+         `<td><input class="num" type="number" min="0" value="${r.w || ""}" data-ri="${i}" data-rk="w"></td>` +
+         `<td style="color:${bad ? "#c00" : "#2e6da4"};font-size:12px">${bad ? "⚠ 步驟資料裡沒有站 " + esc(cur) : dest}</td>` +
+         `<td style="white-space:nowrap"><button class="rowbtn mv" title="上移" data-ract="up" data-ri="${i}">↑</button>` +
+         `<button class="rowbtn mv" title="下移" data-ract="down" data-ri="${i}">↓</button>` +
+         `<button class="rowbtn ins" title="在下方插入一段" data-ract="ins" data-ri="${i}">＋</button>` +
+         `<button class="rowbtn" title="刪除此段" data-ract="del" data-ri="${i}">✕</button></td></tr>`;
+  });
+  h += "</table>";
+  el.innerHTML = h;
+}
+function addLeg() {
+  snap();
+  if (!state.route) state.route = [];
+  state.route.push({ st: "", w: 0 });
+  renderRoute(); autosave();
+}
+function clearRoute() {
+  if (!(state.route || []).length) return;
+  if (!confirm("清空作業路徑、回到傳統模式？（可用復原找回）")) return;
+  snap();
+  state.route = [];
+  renderRoute(); autosave(); drawChartDebounced();
+}
+function RU(ri, k, v) {
+  snap();
+  if (k === "w") state.route[ri].w = Math.max(0, +v || 0);
+  else state.route[ri].st = v;
+  renderRoute(); autosave(); drawChartDebounced();
+}
+function routeAct(act, ri) {
+  const rt = state.route || [];
+  if (act === "ins") { snap(); rt.splice(ri + 1, 0, { st: "", w: 0 }); }
+  else if (act === "del") { snap(); rt.splice(ri, 1); }
+  else {
+    const ni = ri + (act === "up" ? -1 : 1);
+    if (ni < 0 || ni >= rt.length) return;
+    snap();
+    const tmp = rt[ri]; rt[ri] = rt[ni]; rt[ni] = tmp;
+  }
+  renderRoute(); autosave(); drawChartDebounced();
+}
+
+// ---------------- paste import ----------------
+function openPaste() { document.getElementById("pasteBox").value = ""; document.getElementById("pasteDlg").showModal(); }
+// Excel 剪貼簿 TSV：含換行/Tab 的儲存格會用引號包住，引號內 "" = 一個引號
+function parseTSV(txt) {
+  txt = txt.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows = [[]]; let cell = "", inQ = false;
+  for (let i = 0; i < txt.length; i++) {
+    const ch = txt[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (txt[i+1] === '"') { cell += '"'; i++; }
+        else inQ = false;
+      } else cell += ch;
+    } else if (ch === '"' && cell === "") { inQ = true; }
+    else if (ch === "\t") { rows[rows.length-1].push(cell); cell = ""; }
+    else if (ch === "\n") { rows[rows.length-1].push(cell); cell = ""; rows.push([]); }
+    else cell += ch;
+  }
+  rows[rows.length-1].push(cell);
+  if (rows.length && rows[rows.length-1].every(c => c === "")) rows.pop();
+  return rows;
+}
+function doPaste() {
+  const txt = document.getElementById("pasteBox").value;
+  if (!txt.trim()) return;
+  const rows = parseTSV(txt);
+  const wide = rows.some(r => r.length >= 10);   // A~K 模板格式
+  const stations = [];
+  let cur = null;
+  for (const c of rows) {
+    const g = i => (c[i] || "").trim();
+    let stNo, stDesc, spNo, spDesc, m, a, w;
+    if (wide) { stNo = g(0); stDesc = g(1); spNo = g(3); spDesc = g(4); m = g(8); a = g(9); w = g(10); }
+    else      { stNo = g(0); stDesc = g(1); spNo = g(2); spDesc = g(3); m = g(4); a = g(5); w = g(6); }
+    const num = s => { const v = parseFloat(String(s).replace(/[, ]/g, "")); return isFinite(v) ? v : 0; };
+    if (!spNo && !spDesc && !num(m) && !num(a) && !num(w)) { continue; }   // 空列
+    if (stNo) { cur = { no: stNo, desc: stDesc, steps: [] }; stations.push(cur); }
+    if (!cur) { cur = { no: String(stations.length + 1), desc: stDesc, steps: [] }; stations.push(cur); }
+    if (spNo || spDesc) cur.steps.push({ no: spNo, desc: spDesc, m: num(m), a: num(a), w: num(w) });
+  }
+  const total = stations.reduce((s, st) => s + st.steps.length, 0);
+  if (total === 0) { alert("沒有解析到任何步驟資料，請確認複製的範圍。"); return; }
+  snap();
+  state.stations = stations.filter(st => st.steps.length > 0);
+  document.getElementById("pasteDlg").close();
+  renderAll(); autosave();
+  alert("已匯入 " + state.stations.length + " 站、共 " + total + " 個步驟。");
+}
+
+// ---------------- classification & simulation ----------------
+function classify(sp) {
+  if ((+sp.a || 0) > 0) return "auto";
+  if ((+sp.w || 0) > 0) return "walk";
+  const d = (sp.desc || "").toLowerCase();
+  if (d.includes("unload") || d.includes("取出")) return "unload";
+  if (d.includes("load") || d.includes("放置")) return "load";
+  return "other";
+}
+function seqOf(st) {
+  for (const sp of st.steps) {
+    const mm = String(sp.no || "").match(/^\s*(\d+)/);
+    if (mm) return parseInt(mm[1]);
+  }
+  return 999;
+}
+// returns {segments, cycles:[{start,end}], waits:[{station,cycle,sec}], layout rows}
+// 站與站：依步驟編號「-」前的數字排序；站內：依表格列的順序由上而下執行
+// 同一列可同時填 Manual+Auto（放置後按開關）：先畫黑線，紅虛線接在黑線結尾同列
+// Auto 填在獨立列（機械加工列）：紅虛線畫在該列，起點對齊上一個手作業結尾，加紅色垂直連接線
+function simulate() {
+  // layout: assign row index to every step (input order), gap between stations
+  const rowsOf = [];   // rowsOf[si][pi] = row index
+  let rowCount = 0;
+  state.stations.forEach((st, si) => {
+    rowsOf.push(st.steps.map(() => rowCount++));
+  });
+  const info = state.stations.map((st, si) => {
+    const steps = [];
+    st.steps.forEach((sp, pi) => {
+      const m = +sp.m || 0, a = +sp.a || 0, w = +sp.w || 0;
+      if (m > 0 || a > 0 || w > 0) steps.push({ row: rowsOf[si][pi], m, a, w });
+    });
+    const autoStep = steps.find(s => s.a > 0);
+    return { si, seq: seqOf(st), steps, firstRow: steps.length ? steps[0].row : 0,
+             autoRow: autoStep ? autoStep.row : null };
+  }).filter(o => o.steps.length > 0);
+  const order = info.slice().sort((a, b) => a.seq - b.seq);
+  if (order.length === 0) return null;
+
+  // 作業路徑模式：route 有內容＝依路徑造訪（同站可多次、軌跡跳回同列）；否則傳統模式
+  const routeMode = Array.isArray(state.route) && state.route.length > 0;
+  let visits; const badLegs = [];
+  if (routeMode) {
+    const byNo = {};
+    info.forEach(o => { byNo[String(state.stations[o.si].no).trim()] = o; });
+    visits = [];
+    state.route.forEach((r, i) => {
+      const o = byNo[String(r.st).trim()];
+      if (o) visits.push({ o, w: +r.w || 0 });
+      else if (String(r.st).trim() !== "") badLegs.push("第" + (i + 1) + "段(站" + r.st + ")");
+    });
+    if (!visits.length) return null;
+  } else {
+    visits = order.map(o => ({ o, w: null }));
+  }
+
+  const segs = [], cyc = [], waits = [], mIdles = [];
+  const machFree = {};
+  let t = 0, lastRow = null;   // lastRow = 人員軌跡目前所在列，用來補垂直連接線
+  const nCyc = Math.max(1, Math.min(6, state.cycles || 1));
+  const vert = (r2) => {       // 站內轉換：黑色細垂直線（時間同一點、換列）
+    if (lastRow !== null && lastRow !== r2) segs.push({ tp:"vert", t1:t, row:lastRow, row2:r2 });
+    lastRow = r2;
+  };
+  for (let c = 1; c <= nCyc; c++) {
+    const cStart = t;
+    for (let i = 0; i < visits.length; i++) {
+      const v = visits[i], o = v.o;
+      const nxt = visits[(i + 1) % visits.length].o;
+      const free = machFree[o.si];      // undefined = 機台尚未啟動過（第一循環）
+      if (free !== undefined && free > t) {
+        // 人等機：人到了機台還在加工 → 灰色點線等待
+        vert(o.firstRow);
+        segs.push({ tp:"wait", t1:t, t2:free, row:o.firstRow, lbl:Math.round(free - t) });
+        waits.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(free - t) });
+        t = free;
+      } else if (free !== undefined && free < t && o.autoRow !== null) {
+        // 機等人：機台先停了人還沒到 → 爆炸圖示（改善機會）
+        segs.push({ tp:"midle", t1:free, t2:t, row:o.autoRow, lbl:Math.round(t - free) });
+        mIdles.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(t - free) });
+      }
+      for (let k = 0; k < o.steps.length; k++) {
+        const s = o.steps[k];
+        if (s.m > 0) { vert(s.row); segs.push({tp:"man", t1:t, t2:t + s.m, row:s.row}); t += s.m; }
+        if (s.a > 0) {
+          if (lastRow !== null && lastRow !== s.row) segs.push({ tp:"rvert", t1:t, row:lastRow, row2:s.row });
+          segs.push({tp:"auto", t1:t, t2:t + s.a, row:s.row});
+          machFree[o.si] = Math.max(machFree[o.si] || 0, t + s.a);
+        }
+        if (s.w > 0 && !routeMode) {
+          // 傳統模式走動：從目前軌跡列結尾連到目標列起點（站內下一步或下一站第一步）
+          const nxtStep = o.steps[k + 1];
+          const target = nxtStep ? nxtStep.row : nxt.firstRow;
+          const fromRow = lastRow !== null ? lastRow : s.row;
+          segs.push({ tp:"walk", t1:t, t2:t + s.w, row:fromRow, row2:target, lbl:Math.round(s.w) });
+          t += s.w;
+          lastRow = target;
+        }
+      }
+      if (routeMode) {
+        // 路徑模式走動：依該段秒數連到下一段造訪站（可跳回上方同列）
+        const fromRow = lastRow !== null ? lastRow : o.firstRow;
+        segs.push({ tp:"walk", t1:t, t2:t + v.w, row:fromRow, row2:nxt.firstRow, lbl:Math.round(v.w) });
+        t += v.w;
+        lastRow = nxt.firstRow;
+      }
+    }
+    cyc.push({ start: cStart, end: t });
+  }
+  return { segs, cyc, waits, mIdles, rowsOf, rowCount, totalT: t, routeMode, badLegs, visitCount: visits.length };
+}
+
+// ---------------- SVG chart ----------------
+function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+// 八角爆炸星形：黃底=機等人（預設）、綠底=人等機
+function burstSVG(cx, cy, rO, rI, label, fill, stroke, tcol) {
+  fill = fill || "#FFE500"; stroke = stroke || "#E8A000"; tcol = tcol || "#B33000";
+  const n = 8, pts = [];
+  for (let i = 0; i < n * 2; i++) {
+    const r = i % 2 ? rI : rO, a = Math.PI * i / n - Math.PI / 2;
+    pts.push((cx + r * Math.cos(a)).toFixed(1) + "," + (cy + r * Math.sin(a)).toFixed(1));
+  }
+  let out = `<polygon points="${pts.join(" ")}" fill="${fill}" stroke="${stroke}" stroke-width="1.4"/>`;
+  if (label) out += `<text x="${cx.toFixed(1)}" y="${(cy + 3.2).toFixed(1)}" font-size="9" font-weight="700" fill="${tcol}" text-anchor="middle">${esc(label)}</text>`;
+  return out;
+}
+
+const TW = { stno:34, desc:150, spno:46, spdesc:200, m:34, a:34, w:34 };  // table col widths
+const ROW_H = 19, ST_GAP = 7, HDR_H = 96, AXIS_H = 22;
+
+function drawChartDebounced() { clearTimeout(drawChartDebounced.tm); drawChartDebounced.tm = setTimeout(drawChart, 350); }
+
+function drawChart() {
+  const sim = simulate();
+  const area = document.getElementById("chartArea");
+  const statsEl = document.getElementById("statsArea");
+  if (!sim || sim.totalT <= 0) { area.innerHTML = '<div class="hint">尚無資料，請輸入步驟秒數。</div>'; statsEl.innerHTML = ""; return; }
+
+  const pps = +state.zoom || 1.5;
+  const tabW = TW.stno + TW.desc + TW.spno + TW.spdesc + TW.m + TW.a + TW.w;
+  const axisT = Math.ceil((sim.totalT + 30) / 10) * 10;
+  const chartW = axisT * pps;
+  const W = tabW + chartW + 14;
+  const gridTop = HDR_H + AXIS_H;
+  const bodyH = sim.rowCount * ROW_H + (state.stations.length) * ST_GAP;
+  const H = gridTop + bodyH + 16;
+  const X0 = tabW;
+  const xt = t => X0 + t * pps;
+
+  // row y positions (with station gaps)
+  const rowY = [];
+  { let y = gridTop, ri = 0;
+    state.stations.forEach(st => {
+      st.steps.forEach(() => { rowY[ri++] = y; y += ROW_H; });
+      y += ST_GAP;
+    });
+  }
+  const rmid = r => rowY[r] + ROW_H / 2;
+
+  let s = "";
+  const line = (x1,y1,x2,y2,st) => { s += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" ${st}/>`; };
+  const rect = (x,y,w,h,st) => { s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" ${st}/>`; };
+  const text = (x,y,t,st) => { s += `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ${st||""}>${esc(t)}</text>`; };
+
+  // ===== header =====
+  rect(0, 0, W - 1, HDR_H - 8, 'fill="none" stroke="#333" stroke-width="1"');
+  text(14, 22, state.title || "Standard Work Combination Sheet", 'font-size="15" font-weight="700"');
+  const ct = sim.cyc.length ? Math.round(sim.cyc[sim.cyc.length-1].end - sim.cyc[sim.cyc.length-1].start) : 0;
+  const cap = ct > 0 && state.avail > 0 ? Math.floor(state.avail / ct) : "";
+  const hdr = [
+    ["Product", state.product], ["Operator #", state.operator],
+    ["Takt time (sec)", state.takt || ""], ["Cycle time (sec)", ct + " (實測)"],
+    ["Available time (sec)", (state.avail||0).toLocaleString()], ["Capacity (unit/shift)", cap]
+  ];
+  hdr.forEach((kv, i) => {
+    const bx = 14 + i * 155, by = 36;
+    rect(bx, by, 148, 34, 'fill="#f4f7fa" stroke="#999" stroke-width="0.7"');
+    text(bx + 6, by + 14, kv[0], 'font-size="9.5" fill="#555"');
+    text(bx + 6, by + 29, String(kv[1]), 'font-size="12.5" font-weight="600"');
+  });
+  // legend
+  const lx = 14 + 6 * 155 + 16, ly = 46;
+  line(lx, ly, lx + 34, ly, 'stroke="#000" stroke-width="3"'); text(lx + 40, ly + 4, "Manual 手作業", 'font-size="10.5"');
+  line(lx, ly + 16, lx + 34, ly + 16, 'stroke="#e00000" stroke-width="3" stroke-dasharray="7,4"'); text(lx + 40, ly + 20, "Auto 自動加工", 'font-size="10.5"');
+  line(lx + 150, ly - 2, lx + 184, ly - 2, 'stroke="#59a832" stroke-width="1.5"');
+  line(lx + 150, ly + 2, lx + 184, ly + 2, 'stroke="#59a832" stroke-width="1.5"'); text(lx + 190, ly + 4, "Walk 走動", 'font-size="10.5"');
+  line(lx + 150, ly + 16, lx + 184, ly + 16, 'stroke="#888" stroke-width="2.5" stroke-dasharray="2,3"');
+  text(lx + 190, ly + 20, "Waiting 等待", 'font-size="10.5"');
+  s += burstSVG(lx + 320, ly, 7, 4, "", "#8FE388", "#2E8B33", "#0B5E12");
+  text(lx + 338, ly + 4, "人等機（人員閒置＝改善機會）", 'font-size="10.5"');
+  s += burstSVG(lx + 320, ly + 16, 7, 4, "");
+  text(lx + 338, ly + 20, "機等人（機台閒置＝改善機會）", 'font-size="10.5"');
+
+  // ===== column headers =====
+  const cols = [["站#",TW.stno],["Station Description",TW.desc],["Step#",TW.spno],["Step Description",TW.spdesc],["Man.",TW.m],["Auto",TW.a],["Walk",TW.w]];
+  { let x = 0;
+    cols.forEach(cw => {
+      rect(x, HDR_H, cw[1], AXIS_H, 'fill="#e8eef4" stroke="#555" stroke-width="0.7"');
+      text(x + cw[1]/2, HDR_H + 14.5, cw[0], 'font-size="9.5" text-anchor="middle" font-weight="600"');
+      x += cw[1];
+    });
+  }
+  // ===== time axis =====
+  rect(X0, HDR_H, chartW, AXIS_H, 'fill="#f7f9fb" stroke="#555" stroke-width="0.7"');
+  const lblStep = pps >= 2 ? 10 : pps >= 1 ? 30 : 60;
+  for (let tt = 0; tt <= axisT; tt += 5) {
+    const major = tt % lblStep === 0;
+    line(xt(tt), major ? HDR_H + 6 : HDR_H + 14, xt(tt), HDR_H + AXIS_H, `stroke="#999" stroke-width="${major?0.9:0.5}"`);
+    if (major && tt > 0) text(xt(tt), HDR_H + 12, String(tt), 'font-size="8.5" text-anchor="middle" fill="#333"');
+  }
+  text(xt(0) + 3, HDR_H + 12, "sec", 'font-size="8" fill="#888"');
+
+  // ===== body grid =====
+  for (let tt = 0; tt <= axisT; tt += 5) {
+    const major = tt % lblStep === 0;
+    line(xt(tt), gridTop, xt(tt), gridTop + bodyH, `stroke="${major ? "#cfd8e0" : "#eceff2"}" stroke-width="${major?0.8:0.5}"`);
+  }
+  // table cells + row lines
+  { let ri = 0;
+    state.stations.forEach((st, si) => {
+      const y0 = rowY[ri], n = st.steps.length, hgt = n * ROW_H;
+      rect(0, y0, TW.stno, hgt, 'fill="#fbfcfd" stroke="#666" stroke-width="0.7"');
+      text(TW.stno/2, y0 + hgt/2 + 4, st.no, 'font-size="11" font-weight="700" text-anchor="middle"');
+      rect(TW.stno, y0, TW.desc, hgt, 'fill="#fff" stroke="#666" stroke-width="0.7"');
+      const dl = String(st.desc||"").split(/\n/).slice(0,3);
+      dl.forEach((d, k) => text(TW.stno + 5, y0 + hgt/2 - (dl.length-1)*6 + k*12 + 3.5, d, 'font-size="9" fill="#222"'));
+      st.steps.forEach((sp, pi) => {
+        const y = rowY[ri], tp = classify(sp);
+        let x = TW.stno + TW.desc;
+        rect(x, y, TW.spno, ROW_H, 'fill="#fff" stroke="#aab4bd" stroke-width="0.5"');
+        text(x + TW.spno/2, y + 13, sp.no, 'font-size="9.5" text-anchor="middle"'); x += TW.spno;
+        rect(x, y, TW.spdesc, ROW_H, 'fill="#fff" stroke="#aab4bd" stroke-width="0.5"');
+        text(x + 4, y + 13, sp.desc, 'font-size="9"'); x += TW.spdesc;
+        const cells = [[sp.m, tp!=="auto"&&tp!=="walk"], [sp.a, tp==="auto"], [sp.w, tp==="walk"]];
+        cells.forEach((cv, k) => {
+          const wdt = [TW.m, TW.a, TW.w][k];
+          rect(x, y, wdt, ROW_H, 'fill="#fff" stroke="#aab4bd" stroke-width="0.5"');
+          if (cv[0] > 0) text(x + wdt/2, y + 13, String(cv[0]), 'font-size="9.5" text-anchor="middle"');
+          x += wdt;
+        });
+        line(X0, y + ROW_H, X0 + chartW, y + ROW_H, 'stroke="#dde3e8" stroke-width="0.5"');
+        ri++;
+      });
+      // station frame
+      rect(X0, y0, chartW, hgt, 'fill="none" stroke="#666" stroke-width="0.8"');
+    });
+  }
+
+  // ===== cycle markers & takt =====
+  sim.cyc.forEach((cc, i) => {
+    line(xt(cc.start), gridTop - AXIS_H, xt(cc.start), gridTop + bodyH, 'stroke="#0070c0" stroke-width="1.4" stroke-dasharray="3,3"');
+    text(xt(cc.start) + 3, gridTop - AXIS_H - 3, "C" + (i+1), 'font-size="10" fill="#0070c0" font-weight="700"');
+    if (state.showTakt && state.takt > 0) {
+      const tx = cc.start + (+state.takt);
+      if (tx <= axisT) {
+        line(xt(tx), gridTop, xt(tx), gridTop + bodyH, 'stroke="#e00000" stroke-width="1.2" stroke-dasharray="8,4"');
+        if (i === 0) text(xt(tx) + 3, gridTop - 4, "Takt " + state.takt + "s", 'font-size="9.5" fill="#e00000" font-weight="600"');
+      }
+    }
+  });
+
+  // ===== work lines =====
+  for (const g of sim.segs) {
+    if (g.tp === "vert") line(xt(g.t1), rmid(g.row), xt(g.t1), rmid(g.row2), 'stroke="#000" stroke-width="1.4"');
+    else if (g.tp === "rvert") line(xt(g.t1), rmid(g.row), xt(g.t1), rmid(g.row2), 'stroke="#e00000" stroke-width="1.4"');
+    else if (g.tp === "man")  line(xt(g.t1), rmid(g.row), xt(g.t2), rmid(g.row), 'stroke="#000" stroke-width="3" stroke-linecap="butt"');
+    else if (g.tp === "auto") line(xt(g.t1), rmid(g.row), xt(g.t2), rmid(g.row), 'stroke="#e00000" stroke-width="2.6" stroke-dasharray="8,5"');
+    else if (g.tp === "wait") {
+      // 人等機：灰色點線＋綠底爆炸圖（等待秒數）
+      line(xt(g.t1), rmid(g.row), xt(g.t2), rmid(g.row), 'stroke="#888" stroke-width="2.4" stroke-dasharray="2,3"');
+      s += burstSVG(xt((g.t1 + g.t2) / 2), rmid(g.row), 15, 8.5, g.lbl + "s", "#8FE388", "#2E8B33", "#0B5E12");
+    } else if (g.tp === "walk") {
+      // 走動：兩條平行細綠線
+      const x1 = xt(g.t1), y1 = rmid(g.row), x2 = xt(g.t2), y2 = rmid(g.row2);
+      const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+      const ox = (-dy / L) * 1.7, oy = (dx / L) * 1.7;
+      line(x1 + ox, y1 + oy, x2 + ox, y2 + oy, 'stroke="#59a832" stroke-width="1.5"');
+      line(x1 - ox, y1 - oy, x2 - ox, y2 - oy, 'stroke="#59a832" stroke-width="1.5"');
+      text(xt(g.t2) + 2, (y1 + y2) / 2, String(g.lbl), 'font-size="8.5" fill="#4a8c2a"');
+    } else if (g.tp === "midle") {
+      // 機等人：爆炸圖示＋閒置秒數（改善機會）
+      s += burstSVG(xt((g.t1 + g.t2) / 2), rmid(g.row), 15, 8.5, g.lbl + "s");
+    }
+  }
+
+  const svg = `<svg id="chartSvg" xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif" style="background:#fff">${s}</svg>`;
+  area.innerHTML = svg;
+  drawChart.meta = { tabW: tabW, pps: pps };
+
+  // ===== stats =====
+  let st = '<table><tr><th>循環</th><th>起始 (s)</th><th>結束 (s)</th><th>Cycle Time (s)</th></tr>';
+  sim.cyc.forEach((cc, i) => {
+    st += `<tr><td>C${i+1}</td><td>${Math.round(cc.start)}</td><td>${Math.round(cc.end)}</td><td><b>${Math.round(cc.end - cc.start)}</b></td></tr>`;
+  });
+  st += "</table>";
+  if (sim.routeMode) {
+    st += '<p style="margin:6px 0 4px"><b>作業路徑</b>（每循環 ' + sim.visitCount + ' 段）：' +
+          (state.route || []).map(r => r.st).filter(x => String(x).trim() !== "").join("→") + "</p>";
+    if (sim.badLegs.length) {
+      st += '<p style="color:#c00;font-weight:600">⚠ 路徑中找不到對應站號，已跳過：' + sim.badLegs.join("、") + '（請確認站# 與步驟資料的站號一致）</p>';
+    }
+  }
+  if (sim.waits.length) {
+    st += '<p style="margin:8px 0 4px"><b>人等機明細</b>（人員到站時機台尚未完工）：';
+    st += sim.waits.map(w => `C${w.cycle} 站${w.station} 等 ${w.sec}s`).join("、") + "</p>";
+  } else {
+    st += '<p style="margin:8px 0 4px">此範圍內無人等機發生。</p>';
+  }
+  if (sim.mIdles.length) {
+    st += '<p style="margin:8px 0 4px;background:#FFF9C4;border-left:4px solid #E8A000;padding:6px 10px;border-radius:0 6px 6px 0">' +
+          '<b>💥 機等人明細</b>（機台閒置＝改善機會）：' +
+          sim.mIdles.map(w => `C${w.cycle} 站${w.station} 閒置 ${w.sec}s`).join("、") +
+          `　合計 <b>${sim.mIdles.reduce((a, w) => a + w.sec, 0)}s</b></p>`;
+  }
+  if (state.takt > 0) {
+    const lastCT = Math.round(sim.cyc[sim.cyc.length-1].end - sim.cyc[sim.cyc.length-1].start);
+    const diff = lastCT - state.takt;
+    st += `<p>最後循環 CT ${lastCT}s vs Takt ${state.takt}s → <b style="color:${diff>0?"#c00":"#2a7"}">${diff>0?"+":""}${diff}s</b></p>`;
+  }
+  statsEl.innerHTML = st;
+}
+
+// ---------------- 列印分頁（A3 橫式、拼貼用） ----------------
+// 時間軸切成多頁：第1頁含表頭與左表，第2頁起無縫接續；字體放大確保 A3 可讀
+function buildPrintPages() {
+  const host = document.getElementById("printPages");
+  host.innerHTML = "";
+  const src = document.querySelector("#chartArea svg");
+  if (!src) return;
+  const W = +src.getAttribute("width"), H = +src.getAttribute("height");
+  const inner = src.innerHTML.replace(/font-size="([0-9.]+)"/g,
+    (m, v) => 'font-size="' + (parseFloat(v) * 1.35).toFixed(1) + '"');
+  const PAGE_W = 1500, PAGE_H = 1010;   // A3 橫式（8mm邊界）扣頁首列的可用px
+  const meta = drawChart.meta || { tabW: 550, pps: 1.5 };
+  const fit = Math.min(1, PAGE_H / H);
+  const winW = Math.floor(PAGE_W / fit);
+  let x = 0, page = 0;
+  while (x < W - 10 && page < 40) {
+    const y0 = page === 0 ? 0 : HDR_H;   // 第2頁起不重複表頭，拼貼時對齊時間軸
+    const vh = H - y0;
+    const t1 = Math.max(0, Math.round((x - meta.tabW) / meta.pps));
+    const t2 = Math.round((x + winW - meta.tabW) / meta.pps);
+    const svgTag = '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(winW * fit) +
+      '" height="' + Math.round(vh * fit) + '" viewBox="' + x + " " + y0 + " " + winW + " " + vh +
+      '" font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif" style="background:#fff">' + inner + "</svg>";
+    const d = document.createElement("div");
+    d.className = "ppage";
+    d.innerHTML = '<div style="font-size:11px;color:#666;margin-bottom:2px">SWCS 第 ' + (page + 1) +
+      ' 頁｜時間約 ' + t1 + 's ～ ' + t2 + 's｜裁邊後依時間軸拼接</div>' + svgTag;
+    host.appendChild(d);
+    x += winW; page++;
+  }
+  const st = document.createElement("div");
+  st.className = "stats";
+  st.style.cssText = "font-size:12.5px;margin-top:4px";
+  st.innerHTML = document.getElementById("statsArea").innerHTML;
+  host.appendChild(st);
+}
+
+// ---------------- events (CSP-safe: no inline handlers) ----------------
+function wireEvents() {
+  const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); };
+  on("btnDraw", "click", drawChart);
+  on("undoBtn", "click", undo);
+  on("btnPrint", "click", () => window.print());
+  on("btnPasteOpen", "click", openPaste);
+  on("btnSave", "click", saveJSON);
+  on("btnOpen", "click", () => document.getElementById("fileIn").click());
+  on("fileIn", "change", function() { loadJSON(this); });
+  on("btnSample", "click", loadSample);
+  on("btnClear", "click", clearAll);
+  on("btnAddStation", "click", addStation);
+  on("btnPasteCancel", "click", () => document.getElementById("pasteDlg").close());
+  on("btnPasteGo", "click", doPaste);
+  ["mTitle", "mProduct", "mOperator", "mTakt", "mAvail"].forEach(id => on(id, "input", metaChanged));
+  ["mCycles", "mZoom", "mShowTakt"].forEach(id => on(id, "change", metaChanged));
+  const ia = document.getElementById("inputArea");
+  ia.addEventListener("change", e => {
+    const t = e.target;
+    if (t.dataset && t.dataset.k !== undefined) U(+t.dataset.si, +t.dataset.pi, t.dataset.k, t.value);
+  });
+  ia.addEventListener("click", e => {
+    const b = e.target.closest("button[data-act]");
+    if (!b) return;
+    const si = +b.dataset.si, pi = +b.dataset.pi;
+    if (b.dataset.act === "mvup") moveStep(si, pi, -1);
+    else if (b.dataset.act === "mvdown") moveStep(si, pi, 1);
+    else if (b.dataset.act === "ins") insStep(si, pi);
+    else if (b.dataset.act === "del") delStep(si, pi);
+    else if (b.dataset.act === "delst") delStation(si);
+    else if (b.dataset.act === "addstep") addStep(si);
+  });
+  on("btnAddLeg", "click", addLeg);
+  on("btnClearRoute", "click", clearRoute);
+  const ra = document.getElementById("routeArea");
+  if (ra) {
+    ra.addEventListener("change", e => {
+      const t = e.target;
+      if (t.dataset && t.dataset.rk !== undefined) RU(+t.dataset.ri, t.dataset.rk, t.value);
+    });
+    ra.addEventListener("click", e => {
+      const b = e.target.closest("button[data-ract]");
+      if (b) routeAct(b.dataset.ract, +b.dataset.ri);
+    });
+  }
+  // 圖形滑鼠拖曳平移（按住圖面拖動：水平捲圖、垂直捲頁）
+  const cw = document.querySelector(".chartwrap");
+  if (cw) {
+    let panning = false, px = 0, py = 0;
+    cw.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      panning = true; px = e.clientX; py = e.clientY;
+      cw.style.cursor = "grabbing";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", e => {
+      if (!panning) return;
+      cw.scrollLeft -= e.clientX - px;
+      window.scrollBy(0, py - e.clientY);
+      px = e.clientX; py = e.clientY;
+    });
+    window.addEventListener("mouseup", () => {
+      if (panning) { panning = false; cw.style.cursor = "grab"; }
+    });
+  }
+  const vt = document.getElementById("verTag");
+  if (vt) vt.textContent = TOOL_VERSION;
+}
+
+// ---------------- init ----------------
+function renderAll() { fillMeta(); renderInput(); renderRoute(); drawChart(); }
+function initTool() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    state = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(SAMPLE));
+  } catch(e) { state = JSON.parse(JSON.stringify(SAMPLE)); }
+  if (!state || !state.stations) state = JSON.parse(JSON.stringify(SAMPLE));
+  renderAll();
+  updateUndoBtn();
+}
+// file:// 模式：script 位於 body 之後直接啟動；書籤模式由 swcstool.js 的 boot 段建好 DOM 再呼叫
+if (document.getElementById("chartArea")) { wireEvents(); initTool(); }
+</script>
+</body>
+</html>
