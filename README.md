@@ -15,7 +15,7 @@
 
 ## 使用方式
 
-1. **線上**：開啟 GitLab Pages 網址（部署後填入）
+1. **線上**：開啟 GitHub Pages 網址（repo 轉 public 後啟用）
 2. **離線**：下載 `index.html`，雙擊用 Edge / Chrome 開啟
 3. 按「載入範例(Demo)」看示範案例（1 人 5 機），或載入 `samples/swcs-demo-sample.json`
 4. 詳細操作見 [docs/manual.html](docs/manual.html)（圖文說明書）
