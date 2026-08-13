@@ -27,6 +27,7 @@
   table.inp input, table.inp textarea { width: 100%; border: none; background: transparent; font-size: 12.5px; padding: 3px 4px; font-family: inherit; }
   table.inp input:focus, table.inp textarea:focus { outline: 2px solid #7fb3e0; background: #fbfdff; }
   table.inp input.num { text-align: center; }
+  table.inp input::placeholder { font-weight: 400; color: #c0c8d0; font-style: italic; }
   table.inp textarea { resize: vertical; min-height: 34px; }
   td.stno { text-align: center; font-weight: 700; background: #f7fafc; }
   .rowbtn { border: none; background: transparent; color: #999; cursor: pointer; font-size: 13px; padding: 1px 4px; }
@@ -81,6 +82,10 @@
     <label>Takt time (sec)<input type="number" id="mTakt"></label>
     <label>Available time (sec)<input type="number" id="mAvail"></label>
     <label>循環數<select id="mCycles"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+    <label>多人節奏<select id="mPace">
+      <option value="free" selected>各自節奏（機停接下一循環）</option>
+      <option value="sync">同步節奏（互等最慢者）</option>
+    </select></label>
     <label>時間軸縮放<select id="mZoom">
       <option value="0.8">0.8 px/秒</option><option value="1">1 px/秒</option>
       <option value="1.5" selected>1.5 px/秒</option><option value="2">2 px/秒</option><option value="3">3 px/秒</option>
@@ -90,11 +95,11 @@
 </div>
 
 <div class="panel no-print">
-  <h2>作業路徑（進階：一人多機重複巡迴，同一站可多次造訪；<b>留空＝傳統模式</b>）</h2>
-  <div class="hint">每一段＝造訪一站。「站#」對應下方步驟資料的站號（<b>建議機台用英文字母 A、B、C…命名</b>，與路徑順序數字區隔）；「走動秒數」＝做完該站走到下一段的時間，目的地會自動顯示在右欄（最後一段＝走回第一段）。設定路徑後，步驟編號不再決定順序、各站的走動列會被忽略。</div>
+  <h2>作業路徑（支援多作業者、最多 10 人；<b>留空＝傳統模式</b>）</h2>
+  <div class="hint">每位作業者一條路徑、<b>各自循環跑自己的節奏</b>。每一段＝造訪一站，「站#」對應下方步驟資料的站號（建議用英文字母 A、B、C…），「走動秒數」＝走到下一段的時間（最後一段＝走回自己的第一段）。<b>每站只能屬於一位作業者</b>；跨作業者的物料流動請規劃 SWIP（標準在製品），統計區有 CT 平衡表輔助判斷流動性。設定路徑後，步驟編號不再決定順序、各站的走動列會被忽略。</div>
   <div id="routeArea"></div>
-  <button class="addbtn" id="btnAddLeg">＋ 新增一段</button>
-  <button class="addbtn" id="btnClearRoute" style="color:#8a4a4a;border-color:#c9a">清空路徑（回傳統模式）</button>
+  <button class="addbtn" id="btnAddOp">＋ 新增作業者</button>
+  <button class="addbtn" id="btnClearRoute" style="color:#8a4a4a;border-color:#c9a">清空全部路徑（回傳統模式）</button>
 </div>
 
 <div class="panel no-print">
@@ -132,7 +137,7 @@
 <script>
 "use strict";
 
-const TOOL_VERSION = "v2.6 (2026-08-07)";
+const TOOL_VERSION = "v2.8 (2026-08-13)";
 let chartView = "swcs";   // "swcs" | "yama"
 
 // ---------------- state ----------------
@@ -268,11 +273,15 @@ function fillMeta() {
   mTakt.value = state.takt || ""; mAvail.value = state.avail || "";
   mCycles.value = String(state.cycles); mZoom.value = String(state.zoom);
   mShowTakt.checked = !!state.showTakt;
+  const mp = document.getElementById("mPace");
+  if (mp) mp.value = state.pace === "sync" ? "sync" : "free";
 }
 function metaChanged() {
   state.title = mTitle.value; state.product = mProduct.value; state.operator = mOperator.value;
   state.takt = +mTakt.value || 0; state.avail = +mAvail.value || 0;
   state.cycles = +mCycles.value; state.zoom = +mZoom.value; state.showTakt = mShowTakt.checked;
+  const mp = document.getElementById("mPace");
+  if (mp) state.pace = mp.value;
   autosave(); drawChartDebounced();
 }
 
@@ -351,62 +360,94 @@ function delStep(si, pi) {
   renderInput(); autosave(); drawChartDebounced();
 }
 
-// ---------------- route (一人多機重複巡迴) ----------------
+// ---------------- route (多作業者路徑) ----------------
+// 舊格式 state.route（單一路徑）自動轉為 operators[0]
+function normalizeState() {
+  if (!Array.isArray(state.operators)) state.operators = [];
+  if (Array.isArray(state.route) && state.route.length) {
+    state.operators = [{ name: "作業者1", route: state.route }];
+  }
+  delete state.route;
+}
 function renderRoute() {
   const el = document.getElementById("routeArea");
   if (!el) return;
-  const rt = state.route || [];
-  if (!rt.length) { el.innerHTML = '<div class="hint">（未設定路徑：使用傳統模式，每站造訪一次、順序依步驟編號）</div>'; return; }
-  const known = {};
+  const ops = state.operators || [];
+  if (!ops.length) { el.innerHTML = '<div class="hint">（未設定路徑：使用傳統模式，每站造訪一次、順序依步驟編號）</div>'; return; }
+  const known = {}, owner = {};
   state.stations.forEach(st => { known[String(st.no).trim()] = true; });
-  let h = '<table class="inp" style="max-width:840px"><tr><th style="width:52px">順序</th><th style="width:90px">站#</th><th style="width:170px">走動到下一段 (sec)</th><th style="width:250px">（自動顯示）</th><th style="width:96px"></th></tr>';
-  rt.forEach((r, i) => {
-    const cur = String(r.st || "").trim();
-    const nxt = String((rt[(i + 1) % rt.length] || {}).st || "").trim();
-    let dest;
-    if (i === rt.length - 1) dest = nxt ? "↩ 走回第 1 段（站 " + esc(nxt) + "），一循環結束" : "↩ 走回第 1 段";
-    else dest = nxt ? "→ 到站 " + esc(nxt) : "→（下一段站# 未填）";
-    const bad = cur !== "" && !known[cur];
-    h += `<tr><td style="text-align:center;background:#f7fafc">${i + 1}</td>` +
-         `<td><input class="num" style="font-weight:700${bad ? ";background:#ffe5e5" : ""}" value="${esc(r.st)}" placeholder="A" data-ri="${i}" data-rk="st"></td>` +
-         `<td><input class="num" type="number" min="0" value="${r.w || ""}" data-ri="${i}" data-rk="w"></td>` +
-         `<td style="color:${bad ? "#c00" : "#2e6da4"};font-size:12px">${bad ? "⚠ 步驟資料裡沒有站 " + esc(cur) : dest}</td>` +
-         `<td style="white-space:nowrap"><button class="rowbtn mv" title="上移" data-ract="up" data-ri="${i}">↑</button>` +
-         `<button class="rowbtn mv" title="下移" data-ract="down" data-ri="${i}">↓</button>` +
-         `<button class="rowbtn ins" title="在下方插入一段" data-ract="ins" data-ri="${i}">＋</button>` +
-         `<button class="rowbtn" title="刪除此段" data-ract="del" data-ri="${i}">✕</button></td></tr>`;
+  ops.forEach((op, oi) => (op.route || []).forEach(r => {
+    const k = String(r.st || "").trim();
+    if (k && owner[k] === undefined) owner[k] = oi;
+  }));
+  let h = "";
+  ops.forEach((op, oi) => {
+    const rt = op.route || [];
+    h += `<div style="margin:${oi ? 14 : 2}px 0 4px;display:flex;align-items:center;gap:8px">` +
+         `<span style="background:#2e6da4;color:#fff;border-radius:4px;padding:2px 8px;font-size:12px">作業者 ${oi + 1}</span>` +
+         `<input value="${esc(op.name || "")}" placeholder="姓名/代號" data-oi="${oi}" data-ok="name" style="width:130px;padding:3px 6px;border:1px solid #bbb;border-radius:4px;font-size:12.5px">` +
+         `<button class="rowbtn" title="刪除此作業者（含其路徑）" data-oact="delop" data-oi="${oi}">✕ 刪除</button></div>`;
+    h += '<table class="inp" style="max-width:840px"><tr><th style="width:52px">順序</th><th style="width:90px">站#</th><th style="width:170px">走動到下一段 (sec)</th><th style="width:250px">（自動顯示）</th><th style="width:96px"></th></tr>';
+    rt.forEach((r, i) => {
+      const cur = String(r.st || "").trim();
+      const nxt = String((rt[(i + 1) % rt.length] || {}).st || "").trim();
+      let dest;
+      if (i === rt.length - 1) dest = nxt ? "↩ 走回第 1 段（站 " + esc(nxt) + "），一循環結束" : "↩ 走回第 1 段";
+      else dest = nxt ? "→ 到站 " + esc(nxt) : "→（下一段站# 未填）";
+      const bad = cur !== "" && !known[cur];
+      const dup = cur !== "" && !bad && owner[cur] !== oi;
+      const empty = cur === "";
+      h += `<tr><td style="text-align:center;background:#f7fafc">${i + 1}</td>` +
+           `<td><input class="num" style="font-weight:700${(bad || dup) ? ";background:#ffe5e5" : (empty ? ";background:#FFF6E0" : "")}" value="${esc(r.st)}" placeholder="填站號" data-oi="${oi}" data-ri="${i}" data-rk="st"></td>` +
+           `<td><input class="num" type="number" min="0" value="${r.w || ""}" data-oi="${oi}" data-ri="${i}" data-rk="w"></td>` +
+           `<td style="color:${(bad || dup) ? "#c00" : (empty ? "#b8860b" : "#2e6da4")};font-size:12px">${empty ? "⚠ 請在「站#」欄填入負責的站號（對應下方步驟資料）" : (bad ? "⚠ 步驟資料裡沒有站 " + esc(cur) : (dup ? "⚠ 站 " + esc(cur) + " 已由作業者 " + (owner[cur] + 1) + " 負責" : dest))}</td>` +
+           `<td style="white-space:nowrap"><button class="rowbtn mv" title="上移" data-oact="up" data-oi="${oi}" data-ri="${i}">↑</button>` +
+           `<button class="rowbtn mv" title="下移" data-oact="down" data-oi="${oi}" data-ri="${i}">↓</button>` +
+           `<button class="rowbtn ins" title="在下方插入一段" data-oact="ins" data-oi="${oi}" data-ri="${i}">＋</button>` +
+           `<button class="rowbtn" title="刪除此段" data-oact="del" data-oi="${oi}" data-ri="${i}">✕</button></td></tr>`;
+    });
+    h += "</table>";
+    h += `<button class="addbtn" style="padding:2px 8px;font-size:11px" data-oact="addleg" data-oi="${oi}">＋ 新增一段</button>`;
   });
-  h += "</table>";
   el.innerHTML = h;
 }
-function addLeg() {
+function addOp() {
+  const ops = state.operators || (state.operators = []);
+  if (ops.length >= 10) { alert("最多支援 10 位作業者。"); return; }
   snap();
-  if (!state.route) state.route = [];
-  state.route.push({ st: "", w: 0 });
+  ops.push({ name: "作業者" + (ops.length + 1), route: [{ st: "", w: 0 }] });
   renderRoute(); autosave();
 }
 function clearRoute() {
-  if (!(state.route || []).length) return;
-  if (!confirm("清空作業路徑、回到傳統模式？（可用復原找回）")) return;
+  if (!(state.operators || []).length) return;
+  if (!confirm("清空全部作業者路徑、回到傳統模式？（可用復原找回）")) return;
   snap();
-  state.route = [];
+  state.operators = [];
   renderRoute(); autosave(); drawChartDebounced();
 }
-function RU(ri, k, v) {
+function RU(oi, ri, k, v) {
   snap();
-  if (k === "w") state.route[ri].w = Math.max(0, +v || 0);
-  else state.route[ri].st = v;
+  const rt = state.operators[oi].route;
+  if (k === "w") rt[ri].w = Math.max(0, +v || 0);
+  else rt[ri].st = v;
   renderRoute(); autosave(); drawChartDebounced();
 }
-function routeAct(act, ri) {
-  const rt = state.route || [];
-  if (act === "ins") { snap(); rt.splice(ri + 1, 0, { st: "", w: 0 }); }
-  else if (act === "del") { snap(); rt.splice(ri, 1); }
+function routeAct(act, oi, ri) {
+  const ops = state.operators || [];
+  if (act === "delop") {
+    if (!confirm("刪除作業者 " + (ops[oi].name || (oi + 1)) + " 與其整條路徑？（可用復原找回）")) return;
+    snap(); ops.splice(oi, 1);
+  } else if (act === "addleg") { snap(); (ops[oi].route || (ops[oi].route = [])).push({ st: "", w: 0 }); }
   else {
-    const ni = ri + (act === "up" ? -1 : 1);
-    if (ni < 0 || ni >= rt.length) return;
-    snap();
-    const tmp = rt[ri]; rt[ri] = rt[ni]; rt[ni] = tmp;
+    const rt = ops[oi].route || [];
+    if (act === "ins") { snap(); rt.splice(ri + 1, 0, { st: "", w: 0 }); }
+    else if (act === "del") { snap(); rt.splice(ri, 1); }
+    else {
+      const ni = ri + (act === "up" ? -1 : 1);
+      if (ni < 0 || ni >= rt.length) return;
+      snap();
+      const tmp = rt[ri]; rt[ri] = rt[ni]; rt[ni] = tmp;
+    }
   }
   renderRoute(); autosave(); drawChartDebounced();
 }
@@ -491,7 +532,7 @@ function simulate() {
     const steps = [];
     st.steps.forEach((sp, pi) => {
       const m = +sp.m || 0, a = +sp.a || 0, w = +sp.w || 0;
-      if (m > 0 || a > 0 || w > 0) steps.push({ row: rowsOf[si][pi], m, a, w });
+      if (m > 0 || a > 0 || w > 0) steps.push({ row: rowsOf[si][pi], m, a, w, desc: sp.desc || "" });
     });
     const autoStep = steps.find(s => s.a > 0);
     return { si, seq: seqOf(st), steps, firstRow: steps.length ? steps[0].row : 0,
@@ -500,81 +541,146 @@ function simulate() {
   const order = info.slice().sort((a, b) => a.seq - b.seq);
   if (order.length === 0) return null;
 
-  // 作業路徑模式：route 有內容＝依路徑造訪（同站可多次、軌跡跳回同列）；否則傳統模式
-  const routeMode = Array.isArray(state.route) && state.route.length > 0;
-  let visits; const badLegs = [];
+  // 多作業者模式：operators 有內容＝每人一條路徑（各自循環、站不重複）；否則傳統模式（單人、步驟編號排序）
+  const badLegs = [];
+  const byNo = {};
+  info.forEach(o => { byNo[String(state.stations[o.si].no).trim()] = o; });
+  const opsSrc = (Array.isArray(state.operators) ? state.operators : [])
+    .filter(op => (op.route || []).some(r => String(r.st || "").trim() !== ""));
+  const routeMode = opsSrc.length > 0;
+  let opList;   // [{name, visits:[{o,w}]}]
   if (routeMode) {
-    const byNo = {};
-    info.forEach(o => { byNo[String(state.stations[o.si].no).trim()] = o; });
-    visits = [];
-    state.route.forEach((r, i) => {
-      const o = byNo[String(r.st).trim()];
-      if (o) visits.push({ o, w: +r.w || 0 });
-      else if (String(r.st).trim() !== "") badLegs.push("第" + (i + 1) + "段(站" + r.st + ")");
+    const claimed = {};
+    opList = [];
+    opsSrc.slice(0, 10).forEach((op, oi) => {
+      const name = String(op.name || "").trim() || ("作業者" + (oi + 1));
+      const visits = [];
+      (op.route || []).forEach((r, i) => {
+        const key = String(r.st || "").trim();
+        if (key === "") return;
+        const o = byNo[key];
+        if (!o) { badLegs.push(name + " 第" + (i + 1) + "段(站" + r.st + " 不存在)"); return; }
+        if (claimed[key] !== undefined && claimed[key] !== oi) { badLegs.push(name + " 第" + (i + 1) + "段(站" + r.st + " 與其他作業者重複)"); return; }
+        claimed[key] = oi;
+        visits.push({ o, w: +r.w || 0 });
+      });
+      if (visits.length) opList.push({ name, visits });
     });
-    if (!visits.length) return null;
+    if (!opList.length) return null;
   } else {
-    visits = order.map(o => ({ o, w: null }));
+    opList = [{ name: "", visits: order.map(o => ({ o, w: null })) }];
   }
 
-  const segs = [], cyc = [], waits = [], mIdles = [];
-  const machFree = {};
+  const segs = [], waits = [], mIdles = [];
   const yMan = {}, yAuto = {};   // 山積表用：最後一個循環的每站手作業/加工彙總
-  let yWalk = 0;
-  let t = 0, lastRow = null;   // lastRow = 人員軌跡目前所在列，用來補垂直連接線
   const nCyc = Math.max(1, Math.min(6, state.cycles || 1));
-  const vert = (r2) => {       // 站內轉換：黑色細垂直線（時間同一點、換列）
-    if (lastRow !== null && lastRow !== r2) segs.push({ tp:"vert", t1:t, row:lastRow, row2:r2 });
-    lastRow = r2;
-  };
+  const pace = state.pace === "sync" ? "sync" : "free";   // free=各自節奏（機停接下一循環）
+  let visitCount = 0;
+  // 每位作業者的持續狀態（機台狀態、軌跡列、時鐘、山積累計）
+  const opState = opList.map(op => {
+    visitCount += op.visits.length;
+    let rMin = Infinity, rMax = -Infinity;
+    op.visits.forEach(v => v.o.steps.forEach(s => { rMin = Math.min(rMin, s.row); rMax = Math.max(rMax, s.row); }));
+    return { machFree: {}, lastRow: null, yWalk: 0, yMan: 0, yDetail: [], cycles: [], t: 0, rMin, rMax };
+  });
+  const cycLine = pace === "sync" ? [] : null;   // 同步模式才有全體產線循環
+  let Tc = 0;                    // 同步模式：本循環全體開始時間
+
   for (let c = 1; c <= nCyc; c++) {
-    const cStart = t;
-    for (let i = 0; i < visits.length; i++) {
-      const v = visits[i], o = v.o;
-      const nxt = visits[(i + 1) % visits.length].o;
-      const free = machFree[o.si];      // undefined = 機台尚未啟動過（第一循環）
-      if (free !== undefined && free > t) {
-        // 人等機：人到了機台還在加工 → 灰色點線等待
-        vert(o.firstRow);
-        segs.push({ tp:"wait", t1:t, t2:free, row:o.firstRow, lbl:Math.round(free - t) });
-        waits.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(free - t) });
-        t = free;
-      } else if (free !== undefined && free < t && o.autoRow !== null) {
-        // 機等人：機台先停了人還沒到 → 爆炸圖示（改善機會）
-        segs.push({ tp:"midle", t1:free, t2:t, row:o.autoRow, lbl:Math.round(t - free) });
-        mIdles.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(t - free) });
-      }
-      for (let k = 0; k < o.steps.length; k++) {
-        const s = o.steps[k];
-        if (s.m > 0) { vert(s.row); segs.push({tp:"man", t1:t, t2:t + s.m, row:s.row}); t += s.m; if (c === nCyc) yMan[o.si] = (yMan[o.si] || 0) + s.m; }
-        if (s.a > 0) {
-          if (lastRow !== null && lastRow !== s.row) segs.push({ tp:"rvert", t1:t, row:lastRow, row2:s.row });
-          segs.push({tp:"auto", t1:t, t2:t + s.a, row:s.row});
-          machFree[o.si] = Math.max(machFree[o.si] || 0, t + s.a);
-          if (c === nCyc) yAuto[o.si] = (yAuto[o.si] || 0) + s.a;
-        }
-        if (s.w > 0 && !routeMode) {
-          // 傳統模式走動：從目前軌跡列結尾連到目標列起點（站內下一步或下一站第一步）
-          const nxtStep = o.steps[k + 1];
-          const target = nxtStep ? nxtStep.row : nxt.firstRow;
-          const fromRow = lastRow !== null ? lastRow : s.row;
-          segs.push({ tp:"walk", t1:t, t2:t + s.w, row:fromRow, row2:target, lbl:Math.round(s.w) });
-          t += s.w;
-          lastRow = target;
-          if (c === nCyc) yWalk += s.w;
+    for (let oi = 0; oi < opList.length; oi++) {
+      const op = opList[oi], visits = op.visits, ps = opState[oi];
+      const machFree = ps.machFree;
+      let t = ps.t, lastRow = ps.lastRow;
+      const cStart = t;
+      if (pace === "free") {
+        // 各自節奏：循環記號畫在自己負責的站區
+        segs.push({ tp:"cmark", t1:t, rowA:ps.rMin, rowB:ps.rMax, lbl:(routeMode && opList.length > 1 ? op.name + " " : "") + "C" + c });
+        if (state.showTakt && +state.takt > 0) {
+          segs.push({ tp:"tmark", t1:t + (+state.takt), rowA:ps.rMin, rowB:ps.rMax, lbl:(c === 1 ? "Takt " + state.takt + "s" : "") });
         }
       }
-      if (routeMode) {
-        // 路徑模式走動：依該段秒數連到下一段造訪站（可跳回上方同列）
-        const fromRow = lastRow !== null ? lastRow : o.firstRow;
-        segs.push({ tp:"walk", t1:t, t2:t + v.w, row:fromRow, row2:nxt.firstRow, lbl:Math.round(v.w) });
-        t += v.w;
-        lastRow = nxt.firstRow;
-        if (c === nCyc) yWalk += v.w;
+      const vert = (r2) => {
+        if (lastRow !== null && lastRow !== r2) segs.push({ tp:"vert", t1:t, row:lastRow, row2:r2 });
+        lastRow = r2;
+      };
+      for (let i = 0; i < visits.length; i++) {
+        const v = visits[i], o = v.o;
+        const nxt = visits[(i + 1) % visits.length].o;
+        const free = machFree[o.si];      // undefined = 機台尚未啟動過（第一循環）
+        if (free !== undefined && free > t) {
+          // 人等機：人到了機台還在加工 → 灰色點線等待
+          vert(o.firstRow);
+          segs.push({ tp:"wait", t1:t, t2:free, row:o.firstRow, lbl:Math.round(free - t) });
+          waits.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(free - t), op: op.name, kind: "mach" });
+          if (c === nCyc) ps.yDetail.push({ tp:"wait", sec: Math.round(free - t), lbl:"等機" });
+          t = free;
+        } else if (free !== undefined && free < t && o.autoRow !== null) {
+          // 機等人：機台先停了人還沒到 → 爆炸圖示（改善機會）
+          segs.push({ tp:"midle", t1:free, t2:t, row:o.autoRow, lbl:Math.round(t - free) });
+          mIdles.push({ station: state.stations[o.si].no, cycle: c, sec: Math.round(t - free), op: op.name });
+        }
+        for (let k = 0; k < o.steps.length; k++) {
+          const s = o.steps[k];
+          if (s.m > 0) { vert(s.row); segs.push({tp:"man", t1:t, t2:t + s.m, row:s.row}); t += s.m; if (c === nCyc) { yMan[o.si] = (yMan[o.si] || 0) + s.m; ps.yMan += s.m; ps.yDetail.push({ tp:"man", sec: s.m, lbl: s.desc }); } }
+          if (s.a > 0) {
+            if (lastRow !== null && lastRow !== s.row) segs.push({ tp:"rvert", t1:t, row:lastRow, row2:s.row });
+            segs.push({tp:"auto", t1:t, t2:t + s.a, row:s.row});
+            machFree[o.si] = Math.max(machFree[o.si] || 0, t + s.a);
+            if (c === nCyc) yAuto[o.si] = (yAuto[o.si] || 0) + s.a;
+          }
+          if (s.w > 0 && !routeMode) {
+            // 傳統模式走動：從目前軌跡列結尾連到目標列起點（站內下一步或下一站第一步）
+            const nxtStep = o.steps[k + 1];
+            const target = nxtStep ? nxtStep.row : nxt.firstRow;
+            const fromRow = lastRow !== null ? lastRow : s.row;
+            segs.push({ tp:"walk", t1:t, t2:t + s.w, row:fromRow, row2:target, lbl:Math.round(s.w) });
+            t += s.w;
+            lastRow = target;
+            if (c === nCyc) { ps.yWalk += s.w; ps.yDetail.push({ tp:"walk", sec: s.w, lbl:"走動" }); }
+          }
+        }
+        if (routeMode) {
+          // 路徑模式走動：依該段秒數連到下一段造訪站（可跳回上方同列）
+          const fromRow = lastRow !== null ? lastRow : o.firstRow;
+          segs.push({ tp:"walk", t1:t, t2:t + v.w, row:fromRow, row2:nxt.firstRow, lbl:Math.round(v.w) });
+          t += v.w;
+          lastRow = nxt.firstRow;
+          if (c === nCyc && v.w > 0) { ps.yWalk += v.w; ps.yDetail.push({ tp:"walk", sec: v.w, lbl:"走動" }); }
+        }
       }
+      ps.lastRow = lastRow;
+      ps.cycles.push({ start: cStart, end: t });
+      ps.t = t;
     }
-    cyc.push({ start: cStart, end: t });
+    if (pace === "sync") {
+      // 同步節奏：全體等最慢者，下一循環一起開始
+      const syncEnd = Math.max(Tc, ...opState.map(ps => ps.t));
+      for (let oi = 0; oi < opList.length; oi++) {
+        const ps = opState[oi];
+        if (ps.t < syncEnd - 0.5) {
+          // 先做完的人：在自己路徑起點等下一循環（等節拍＝平衡改善空間）
+          const fr = opList[oi].visits[0].o.firstRow;
+          const sec = Math.round(syncEnd - ps.t);
+          segs.push({ tp:"wait", t1: ps.t, t2: syncEnd, row: fr, lbl: sec });
+          waits.push({ station: state.stations[opList[oi].visits[0].o.si].no, cycle: c, sec: sec, op: opList[oi].name, kind: "sync" });
+          if (c === nCyc) ps.yDetail.push({ tp:"wait", sec: sec, lbl:"等節拍" });
+          ps.t = syncEnd;
+        }
+      }
+      cycLine.push({ start: Tc, end: syncEnd });
+      Tc = syncEnd;
+    }
   }
+  const totalT = Math.max(...opState.map(ps => ps.t));
+  const cycOps = opList.map((op, oi) => ({ name: op.name, cycles: opState[oi].cycles }));
+  const yOps = opList.map((op, oi) => ({
+    name: op.name || "作業者",
+    man: Math.round(opState[oi].yMan),
+    walk: Math.round(opState[oi].yWalk),
+    wait: Math.round(waits.filter(w => w.cycle === nCyc && w.op === op.name).reduce((a, w) => a + w.sec, 0)),
+    detail: opState[oi].yDetail
+  }));
+
   // 山積表資料（取最後一個循環＝穩定狀態）
   const yama = {
     cycle: nCyc,
@@ -584,13 +690,9 @@ function simulate() {
       auto: Math.round(yAuto[o.si] || 0),
       idle: Math.round(mIdles.filter(w => w.cycle === nCyc && w.station === state.stations[o.si].no).reduce((a, w) => a + w.sec, 0))
     })),
-    op: {
-      man: Math.round(Object.keys(yMan).reduce((a, k) => a + yMan[k], 0)),
-      walk: Math.round(yWalk),
-      wait: Math.round(waits.filter(w => w.cycle === nCyc).reduce((a, w) => a + w.sec, 0))
-    }
+    ops: yOps
   };
-  return { segs, cyc, waits, mIdles, rowsOf, rowCount, totalT: t, routeMode, badLegs, visitCount: visits.length, yama };
+  return { segs, cycLine, cycOps, waits, mIdles, rowsOf, rowCount, totalT, routeMode, badLegs, visitCount, yama, pace, multiMode: routeMode && opList.length > 1 };
 }
 
 // ---------------- SVG chart ----------------
@@ -656,7 +758,17 @@ function drawChart() {
   // ===== header =====
   rect(0, 0, W - 1, HDR_H - 8, 'fill="none" stroke="#333" stroke-width="1"');
   text(14, 22, state.title || "Standard Work Combination Sheet", 'font-size="15" font-weight="700"');
-  const ct = sim.cyc.length ? Math.round(sim.cyc[sim.cyc.length-1].end - sim.cyc[sim.cyc.length-1].start) : 0;
+  // 產線 CT：同步模式＝同步循環長；各自節奏＝最慢作業者的穩定 CT
+  let ct = 0;
+  if (sim.cycLine && sim.cycLine.length) {
+    const lastLC = sim.cycLine[sim.cycLine.length - 1];
+    ct = Math.round(lastLC.end - lastLC.start);
+  } else {
+    ct = Math.max(0, ...sim.cycOps.map(o => {
+      const cc = o.cycles[o.cycles.length - 1];
+      return cc ? Math.round(cc.end - cc.start) : 0;
+    }));
+  }
   const cap = ct > 0 && state.avail > 0 ? Math.floor(state.avail / ct) : "";
   const hdr = [
     ["Product", state.product], ["Operator #", state.operator],
@@ -737,8 +849,8 @@ function drawChart() {
     });
   }
 
-  // ===== cycle markers & takt =====
-  sim.cyc.forEach((cc, i) => {
+  // ===== cycle markers & takt（同步模式：循環線全高對齊） =====
+  if (sim.cycLine) sim.cycLine.forEach((cc, i) => {
     line(xt(cc.start), gridTop - AXIS_H, xt(cc.start), gridTop + bodyH, 'stroke="#0070c0" stroke-width="1.4" stroke-dasharray="3,3"');
     text(xt(cc.start) + 3, gridTop - AXIS_H - 3, "C" + (i+1), 'font-size="10" fill="#0070c0" font-weight="700"');
     if (state.showTakt && state.takt > 0) {
@@ -752,7 +864,20 @@ function drawChart() {
 
   // ===== work lines =====
   for (const g of sim.segs) {
-    if (g.tp === "vert") line(xt(g.t1), rmid(g.row), xt(g.t1), rmid(g.row2), 'stroke="#000" stroke-width="1.4"');
+    if (g.tp === "cmark") {
+      // 各自節奏：循環記號畫在該作業者負責的站區
+      if (g.t1 <= axisT) {
+        line(xt(g.t1), rowY[g.rowA] - 4, xt(g.t1), rowY[g.rowB] + ROW_H, 'stroke="#0070c0" stroke-width="1.4" stroke-dasharray="3,3"');
+        text(xt(g.t1) + 3, rowY[g.rowA] - 6, g.lbl, 'font-size="9.5" fill="#0070c0" font-weight="700"');
+      }
+    }
+    else if (g.tp === "tmark") {
+      if (g.t1 <= axisT) {
+        line(xt(g.t1), rowY[g.rowA], xt(g.t1), rowY[g.rowB] + ROW_H, 'stroke="#e00000" stroke-width="1.2" stroke-dasharray="8,4"');
+        if (g.lbl) text(xt(g.t1) + 3, rowY[g.rowA] - 6, g.lbl, 'font-size="9.5" fill="#e00000" font-weight="600"');
+      }
+    }
+    else if (g.tp === "vert") line(xt(g.t1), rmid(g.row), xt(g.t1), rmid(g.row2), 'stroke="#000" stroke-width="1.4"');
     else if (g.tp === "rvert") line(xt(g.t1), rmid(g.row), xt(g.t1), rmid(g.row2), 'stroke="#e00000" stroke-width="1.4"');
     else if (g.tp === "man")  line(xt(g.t1), rmid(g.row), xt(g.t2), rmid(g.row), 'stroke="#000" stroke-width="3" stroke-linecap="butt"');
     else if (g.tp === "auto") line(xt(g.t1), rmid(g.row), xt(g.t2), rmid(g.row), 'stroke="#e00000" stroke-width="2.6" stroke-dasharray="8,5"');
@@ -783,34 +908,90 @@ function drawChart() {
 
 // ---------------- 統計區（SWCS 與山積表共用） ----------------
 function buildStatsHTML(sim) {
-  let st = '<table><tr><th>循環</th><th>起始 (s)</th><th>結束 (s)</th><th>Cycle Time (s)</th></tr>';
-  sim.cyc.forEach((cc, i) => {
-    st += `<tr><td>C${i+1}</td><td>${Math.round(cc.start)}</td><td>${Math.round(cc.end)}</td><td><b>${Math.round(cc.end - cc.start)}</b></td></tr>`;
-  });
-  st += "</table>";
+  let st = "";
+  if (sim.cycLine) {
+    // 同步節奏：全體產線循環表
+    st += '<table><tr><th>循環</th><th>起始 (s)</th><th>結束 (s)</th><th>產線 CT (s)</th></tr>';
+    sim.cycLine.forEach((cc, i) => {
+      st += `<tr><td>C${i+1}</td><td>${Math.round(cc.start)}</td><td>${Math.round(cc.end)}</td><td><b>${Math.round(cc.end - cc.start)}</b></td></tr>`;
+    });
+    st += "</table>";
+  } else {
+    // 各自節奏：每人自己的循環表（CT 含等機時間＝機停後接下一循環）
+    st += '<table><tr><th>作業者</th><th>循環</th><th>起始 (s)</th><th>結束 (s)</th><th>CT (s)</th></tr>';
+    sim.cycOps.forEach(o => {
+      o.cycles.forEach((cc, i) => {
+        st += `<tr><td>${esc(o.name || "作業者")}</td><td>C${i+1}</td><td>${Math.round(cc.start)}</td><td>${Math.round(cc.end)}</td><td><b>${Math.round(cc.end - cc.start)}</b></td></tr>`;
+      });
+    });
+    st += "</table>";
+  }
+  if (sim.multiMode) {
+    if (sim.cycLine) {
+      // 同步節奏平衡表：等節拍＝平衡改善空間
+      const lc = sim.cycLine[sim.cycLine.length - 1];
+      const lineCT = Math.round(lc.end - lc.start);
+      st += '<p style="margin:8px 0 4px"><b>作業者平衡表</b>（最後循環，產線 CT ' + lineCT + 's）：</p>' +
+            '<table><tr><th>作業者</th><th>實作業時間 (s)</th><th>等節拍 (s)</th><th>負荷率</th></tr>';
+      sim.cycOps.forEach(o => {
+        const c = o.cycles[o.cycles.length - 1];
+        const own = Math.round(c.end - c.start);
+        const idle = Math.max(0, lineCT - own);
+        const pct = lineCT ? Math.round(own / lineCT * 100) : 0;
+        st += `<tr><td>${esc(o.name)}</td><td>${own}</td><td>${idle}</td><td><b style="color:${pct >= 95 ? "#c00" : (pct < 70 ? "#b8860b" : "#2a7")}">${pct}%</b></td></tr>`;
+      });
+      st += "</table>";
+    } else {
+      // 各自節奏平衡表：比較每人穩定 CT（匹配度）
+      const cts = sim.cycOps.map(o => {
+        const c = o.cycles[o.cycles.length - 1];
+        return { name: o.name, ct: Math.round(c.end - c.start) };
+      });
+      const maxCT = Math.max(...cts.map(x => x.ct), 1);
+      st += '<p style="margin:8px 0 4px"><b>作業者平衡表</b>（最後循環，瓶頸 CT ' + maxCT + 's）：</p>' +
+            '<table><tr><th>作業者</th><th>穩定 CT (s)</th><th>與最慢者差 (s)</th><th>匹配度</th></tr>';
+      cts.forEach(x => {
+        const diff = maxCT - x.ct;
+        const pct = Math.round(x.ct / maxCT * 100);
+        st += `<tr><td>${esc(x.name)}</td><td><b>${x.ct}</b></td><td>${diff}</td><td><b style="color:${pct >= 95 ? "#2a7" : (pct < 70 ? "#c00" : "#b8860b")}">${pct}%</b></td></tr>`;
+      });
+      st += "</table>";
+    }
+    st += '<p style="margin:6px 0 4px;background:#E8F1FB;border-left:4px solid #2e6da4;padding:6px 10px;border-radius:0 6px 6px 0">' +
+          '🔄 <b>SWIP 提醒</b>：跨作業者的物料流動需設定 SWIP（標準在製品）緩衝才能讓生產流動。CT 差距大＝重新分配站別的改善空間。</p>';
+  }
   if (sim.routeMode) {
-    st += '<p style="margin:6px 0 4px"><b>作業路徑</b>（每循環 ' + sim.visitCount + ' 段）：' +
-          (state.route || []).map(r => r.st).filter(x => String(x).trim() !== "").join("→") + "</p>";
+    const rts = (state.operators || []).map((op, oi) => (op.name || ("作業者" + (oi + 1))) + "：" +
+      (op.route || []).map(r => r.st).filter(x => String(x).trim() !== "").join("→")).join("　｜　");
+    st += '<p style="margin:6px 0 4px"><b>作業路徑</b>：' + esc(rts) + "</p>";
     if (sim.badLegs.length) {
-      st += '<p style="color:#c00;font-weight:600">⚠ 路徑中找不到對應站號，已跳過：' + sim.badLegs.join("、") + '（請確認站# 與步驟資料的站號一致）</p>';
+      st += '<p style="color:#c00;font-weight:600">⚠ 路徑段已跳過：' + sim.badLegs.join("、") + '（請確認站# 正確且未跨作業者重複）</p>';
     }
   }
   if (sim.waits.length) {
-    st += '<p style="margin:8px 0 4px"><b>人等機明細</b>（人員到站時機台尚未完工）：';
-    st += sim.waits.map(w => `C${w.cycle} 站${w.station} 等 ${w.sec}s`).join("、") + "</p>";
+    st += '<p style="margin:8px 0 4px"><b>等待明細</b>（等機台完工／等節拍同步）：';
+    st += sim.waits.map(w => `C${w.cycle}${w.op ? " " + esc(w.op) : ""} 站${esc(w.station)} 等 ${w.sec}s${w.kind === "sync" ? "（節拍）" : ""}`).join("、") + "</p>";
   } else {
-    st += '<p style="margin:8px 0 4px">此範圍內無人等機發生。</p>';
+    st += '<p style="margin:8px 0 4px">此範圍內無人員等待。</p>';
   }
   if (sim.mIdles.length) {
     st += '<p style="margin:8px 0 4px;background:#FFF9C4;border-left:4px solid #E8A000;padding:6px 10px;border-radius:0 6px 6px 0">' +
           '<b>💥 機等人明細</b>（機台閒置＝改善機會）：' +
-          sim.mIdles.map(w => `C${w.cycle} 站${w.station} 閒置 ${w.sec}s`).join("、") +
+          sim.mIdles.map(w => `C${w.cycle}${w.op ? " " + esc(w.op) : ""} 站${esc(w.station)} 閒置 ${w.sec}s`).join("、") +
           `　合計 <b>${sim.mIdles.reduce((a, w) => a + w.sec, 0)}s</b></p>`;
   }
   if (state.takt > 0) {
-    const lastCT = Math.round(sim.cyc[sim.cyc.length-1].end - sim.cyc[sim.cyc.length-1].start);
+    let lastCT;
+    if (sim.cycLine && sim.cycLine.length) {
+      lastCT = Math.round(sim.cycLine[sim.cycLine.length-1].end - sim.cycLine[sim.cycLine.length-1].start);
+    } else {
+      lastCT = Math.max(0, ...sim.cycOps.map(o => {
+        const cc = o.cycles[o.cycles.length - 1];
+        return cc ? Math.round(cc.end - cc.start) : 0;
+      }));
+    }
     const diff = lastCT - state.takt;
-    st += `<p>最後循環 CT ${lastCT}s vs Takt ${state.takt}s → <b style="color:${diff>0?"#c00":"#2a7"}">${diff>0?"+":""}${diff}s</b></p>`;
+    st += `<p>最後循環 產線CT ${lastCT}s vs Takt ${state.takt}s → <b style="color:${diff>0?"#c00":"#2a7"}">${diff>0?"+":""}${diff}s</b></p>`;
   }
   return st;
 }
@@ -821,11 +1002,12 @@ function buildYamaSVG(sim) {
   const takt = +state.takt || 0;
   const n = y.stations.length;
   const BW = 52, GAP = 30, LM = 64, TOP = 64, BH = 340;
-  const opX = LM + 14 + n * (BW + GAP) + 30;          // 作業者柱 x（與機台間隔一條分隔線）
-  const W = opX + BW + 90;
+  const ops = y.ops || [];
+  const opX = LM + 14 + n * (BW + GAP) + 30;          // 作業者柱起點 x（與機台間隔一條分隔線）
+  const W = opX + ops.length * (BW + GAP) + 60;
   const H = TOP + BH + 34;
-  const opTotal = y.op.man + y.op.walk + y.op.wait;
-  let maxV = Math.max(takt, opTotal, 1);
+  let maxV = Math.max(takt, 1);
+  ops.forEach(o => { maxV = Math.max(maxV, o.man + o.walk + o.wait); });
   y.stations.forEach(v => { maxV = Math.max(maxV, v.man + v.auto + v.idle); });
   maxV *= 1.1;
   const sc = BH / maxV;
@@ -836,7 +1018,7 @@ function buildYamaSVG(sim) {
   const L = (x1, y1, x2, y2, st2) => { s += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" ${st2}/>`; };
   T(8, 22, "山積表 Yamazumi（第 " + y.cycle + " 循環" + (y.cycle > 1 ? "＝穩定狀態" : "") + "）", 'font-size="14" font-weight="700"');
   // 圖例
-  const LG = [["#E05555", "機械加工"], ["#555", "手作業"], ["#FFE500", "機等人(閒置)"], ["#8FCB7E", "走動"], ["#BBB", "人等機(等待)"]];
+  const LG = [["#E05555", "機械加工"], ["#555", "手作業"], ["#FFE500", "機等人(閒置)"], ["#8FCB7E", "走動"], ["#BBB", "等待(等機/等節拍)"]];
   let lgx = 330;
   LG.forEach(g => {
     R(lgx, 12, 12, 10, g[0], 'stroke="#999" stroke-width="0.5"');
@@ -873,20 +1055,29 @@ function buildYamaSVG(sim) {
     T(x + BW / 2, yP(cur) - 6, v.idle > 0 ? workTotal + "+閒" + v.idle : String(workTotal), 'font-size="10.5" text-anchor="middle" font-weight="600"');
     T(x + BW / 2, TOP + BH + 16, "站" + v.no, 'font-size="11" text-anchor="middle"');
   });
-  // 分隔線 + 作業者柱：手作業(底) + 走動 + 人等機(頂)
+  // 分隔線 + 作業者柱（每人一柱）：逐動作堆疊，步驟 #1 在最下、依執行順序往上
   L(opX - 18, TOP - 12, opX - 18, TOP + BH, 'stroke="#ccd6e0" stroke-dasharray="4,4"');
-  let cur2 = 0;
-  R(opX, yP(cur2 + y.op.man), BW, y.op.man * sc, "#555");
-  segLabel(opX, yP(cur2 + y.op.man), y.op.man * sc, y.op.man, "#fff");
-  cur2 += y.op.man;
-  R(opX, yP(cur2 + y.op.walk), BW, y.op.walk * sc, "#8FCB7E");
-  segLabel(opX, yP(cur2 + y.op.walk), y.op.walk * sc, y.op.walk, "#1e4620");
-  cur2 += y.op.walk;
-  R(opX, yP(cur2 + y.op.wait), BW, y.op.wait * sc, "#BBB");
-  segLabel(opX, yP(cur2 + y.op.wait), y.op.wait * sc, y.op.wait, "#333");
-  cur2 += y.op.wait;
-  T(opX + BW / 2, yP(cur2) - 6, String(opTotal), 'font-size="10.5" text-anchor="middle" font-weight="600"');
-  T(opX + BW / 2, TOP + BH + 16, "作業者", 'font-size="11" text-anchor="middle"');
+  ops.forEach((o, i) => {
+    const x = opX + i * (BW + GAP);
+    let cur2 = 0;
+    const items = (o.detail && o.detail.length) ? o.detail :
+      [{ tp:"man", sec:o.man, lbl:"手作業" }, { tp:"walk", sec:o.walk, lbl:"走動" }, { tp:"wait", sec:o.wait, lbl:"等待" }];
+    items.forEach(it => {
+      const sec = Math.round(it.sec || 0);
+      if (sec <= 0) return;
+      const col = it.tp === "man" ? "#555" : (it.tp === "walk" ? "#8FCB7E" : "#BBB");
+      const tcol = it.tp === "man" ? "#fff" : (it.tp === "walk" ? "#1e4620" : "#333");
+      const h = sec * sc;
+      R(x, yP(cur2 + sec), BW, h, col, 'stroke="#fff" stroke-width="0.8"');
+      if (h >= 11) {
+        const nm = String(it.lbl || "").replace(/\s*[（(].*$/, "").trim().slice(0, 4);
+        T(x + BW / 2, yP(cur2 + sec) + h / 2 + 3, nm + " " + sec, 'font-size="8.5" text-anchor="middle" fill="' + tcol + '"');
+      }
+      cur2 += sec;
+    });
+    T(x + BW / 2, yP(cur2) - 6, String(Math.round(cur2)), 'font-size="10.5" text-anchor="middle" font-weight="600"');
+    T(x + BW / 2, TOP + BH + 16, o.name, 'font-size="11" text-anchor="middle"');
+  });
   // Takt 線（最上層）
   if (takt > 0) {
     L(LM, yP(takt), W - 30, yP(takt), 'stroke="#e00000" stroke-width="1.8" stroke-dasharray="8,4"');
@@ -948,7 +1139,7 @@ function wireEvents() {
   on("btnPasteCancel", "click", () => document.getElementById("pasteDlg").close());
   on("btnPasteGo", "click", doPaste);
   ["mTitle", "mProduct", "mOperator", "mTakt", "mAvail"].forEach(id => on(id, "input", metaChanged));
-  ["mCycles", "mZoom", "mShowTakt"].forEach(id => on(id, "change", metaChanged));
+  ["mCycles", "mZoom", "mShowTakt", "mPace"].forEach(id => on(id, "change", metaChanged));
   const ia = document.getElementById("inputArea");
   ia.addEventListener("change", e => {
     const t = e.target;
@@ -967,17 +1158,23 @@ function wireEvents() {
   });
   on("viewSwcs", "click", () => setView("swcs"));
   on("viewYama", "click", () => setView("yama"));
-  on("btnAddLeg", "click", addLeg);
+  on("btnAddOp", "click", addOp);
   on("btnClearRoute", "click", clearRoute);
   const ra = document.getElementById("routeArea");
   if (ra) {
     ra.addEventListener("change", e => {
       const t = e.target;
-      if (t.dataset && t.dataset.rk !== undefined) RU(+t.dataset.ri, t.dataset.rk, t.value);
+      if (!t.dataset) return;
+      if (t.dataset.rk !== undefined) RU(+t.dataset.oi, +t.dataset.ri, t.dataset.rk, t.value);
+      else if (t.dataset.ok === "name") {
+        snap();
+        state.operators[+t.dataset.oi].name = t.value;
+        renderRoute(); autosave(); drawChartDebounced();
+      }
     });
     ra.addEventListener("click", e => {
-      const b = e.target.closest("button[data-ract]");
-      if (b) routeAct(b.dataset.ract, +b.dataset.ri);
+      const b = e.target.closest("button[data-oact]");
+      if (b) routeAct(b.dataset.oact, +b.dataset.oi, b.dataset.ri !== undefined ? +b.dataset.ri : -1);
     });
   }
   // 圖形滑鼠拖曳平移（按住圖面拖動：水平捲圖、垂直捲頁）
@@ -1000,6 +1197,23 @@ function wireEvents() {
       if (panning) { panning = false; cw.style.cursor = "grab"; }
     });
   }
+  // Enter 跳下一格（步驟資料與作業路徑的輸入格，像 Excel 一樣）
+  const enterNav = cont => {
+    if (!cont) return;
+    cont.addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.target.tagName !== "INPUT") return;
+      e.preventDefault();
+      const idx = [...cont.querySelectorAll("input")].indexOf(e.target);
+      e.target.blur();
+      requestAnimationFrame(() => {
+        const list = cont.querySelectorAll("input");
+        const el = list[idx + 1] || list[idx];
+        if (el) { el.focus(); if (el.select) el.select(); }
+      });
+    });
+  };
+  enterNav(document.getElementById("inputArea"));
+  enterNav(document.getElementById("routeArea"));
   const vt = document.getElementById("verTag");
   if (vt) vt.textContent = TOOL_VERSION;
 }
@@ -1013,7 +1227,7 @@ function setView(v) {
 }
 
 // ---------------- init ----------------
-function renderAll() { fillMeta(); renderInput(); renderRoute(); drawChart(); }
+function renderAll() { normalizeState(); fillMeta(); renderInput(); renderRoute(); drawChart(); }
 function initTool() {
   try {
     const saved = localStorage.getItem(LS_KEY);
