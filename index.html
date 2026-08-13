@@ -137,7 +137,7 @@
 <script>
 "use strict";
 
-const TOOL_VERSION = "v2.8 (2026-08-13)";
+const TOOL_VERSION = "v2.9 (2026-08-13)";
 let chartView = "swcs";   // "swcs" | "yama"
 
 // ---------------- state ----------------
@@ -591,6 +591,20 @@ function simulate() {
       const op = opList[oi], visits = op.visits, ps = opState[oi];
       const machFree = ps.machFree;
       let t = ps.t, lastRow = ps.lastRow;
+      // 循環起點＝第一個手動動作：回到起點站的等機歸屬「上一循環尾端」
+      {
+        const o0 = visits[0].o;
+        const free0 = machFree[o0.si];
+        if (free0 !== undefined && free0 > t) {
+          const sec0 = Math.round(free0 - t);
+          if (lastRow !== null && lastRow !== o0.firstRow) segs.push({ tp:"vert", t1:t, row:lastRow, row2:o0.firstRow });
+          lastRow = o0.firstRow;
+          segs.push({ tp:"wait", t1:t, t2:free0, row:o0.firstRow, lbl:sec0 });
+          waits.push({ station: state.stations[o0.si].no, cycle: c - 1, sec: sec0, op: op.name, kind: "mach" });
+          if (ps.cycles.length) ps.cycles[ps.cycles.length - 1].end = free0;   // 上一循環 CT 延長至機停
+          t = free0;
+        }
+      }
       const cStart = t;
       if (pace === "free") {
         // 各自節奏：循環記號畫在自己負責的站區
@@ -669,6 +683,22 @@ function simulate() {
       }
       cycLine.push({ start: Tc, end: syncEnd });
       Tc = syncEnd;
+    }
+  }
+  // 最後循環的尾端等機（＝下一循環的到站等待）：補齊穩定 CT 與山積堆疊（各自節奏）
+  if (pace === "free") {
+    for (let oi = 0; oi < opList.length; oi++) {
+      const op = opList[oi], ps = opState[oi];
+      const o0 = op.visits[0].o;
+      const freeT = ps.machFree[o0.si];
+      if (freeT !== undefined && freeT > ps.t + 0.001) {
+        const sec = Math.round(freeT - ps.t);
+        segs.push({ tp:"wait", t1: ps.t, t2: freeT, row: o0.firstRow, lbl: sec });
+        waits.push({ station: state.stations[o0.si].no, cycle: nCyc, sec: sec, op: op.name, kind: "mach" });
+        ps.yDetail.push({ tp:"wait", sec: sec, lbl:"等機" });
+        if (ps.cycles.length) ps.cycles[ps.cycles.length - 1].end = freeT;
+        ps.t = freeT;
+      }
     }
   }
   const totalT = Math.max(...opState.map(ps => ps.t));
