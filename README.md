@@ -15,7 +15,7 @@
 
 ## 使用方式
 
-1. **線上**：開啟 GitHub Pages 網址（repo 轉 public 後啟用）
+1. **線上**：直接開啟 <https://fosteracct-ai.github.io/swcs-tool/>（免安裝，開網址即用）
 2. **離線**：下載 `index.html`，雙擊用 Edge / Chrome 開啟
 3. 按「載入範例(Demo)」看示範案例（1 人 5 機），或載入 `samples/swcs-demo-sample.json`
 4. 詳細操作見 [docs/manual.html](docs/manual.html)（圖文說明書）
